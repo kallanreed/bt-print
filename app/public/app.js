@@ -303,16 +303,16 @@ function renderApp(root) {
       </section>
 
       <section class="preview-grid">
-        <article class="card preview-card">
-          <h2>Resized source</h2>
+        <details class="card preview-card" open>
+          <summary>Resized source</summary>
           <div class="canvas-frame">
             <canvas id="source-canvas"></canvas>
           </div>
-        </article>
+        </details>
         <article class="card preview-card">
           <h2>Dithered preview</h2>
           <div class="canvas-frame">
-            <canvas id="output-canvas"></canvas>
+            <canvas id="output-canvas" title="Click to copy to clipboard"></canvas>
           </div>
         </article>
       </section>
@@ -507,6 +507,24 @@ function renderApp(root) {
     } catch (error) {
       console.error(error);
       status.textContent = "Unable to load the pasted image.";
+    }
+  });
+
+  outputCanvas.addEventListener("click", async () => {
+    if (!state.image) {
+      return;
+    }
+
+    try {
+      const blob = await new Promise((resolve, reject) =>
+        outputCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas toBlob returned null."))), "image/png")
+      );
+
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      status.textContent = "Output copied to clipboard.";
+    } catch (error) {
+      console.error(error);
+      status.textContent = "Unable to copy output to clipboard.";
     }
   });
 
