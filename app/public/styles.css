@@ -191,6 +191,34 @@ code {
   flex-direction: column;
 }
 
+details.preview-card > summary {
+  margin: 0 0 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #90a6ff;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  user-select: none;
+}
+
+details.preview-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.preview-card > summary::before {
+  content: "\25b8";
+  font-size: 0.75em;
+}
+
+details[open].preview-card > summary::before {
+  content: "\25be";
+}
+
 .canvas-frame {
   display: grid;
   place-items: center;
@@ -212,6 +240,15 @@ code {
   image-rendering: pixelated;
   border-radius: 6px;
   background: #fff;
+}
+
+#output-canvas {
+  cursor: pointer;
+}
+
+#output-canvas:hover {
+  outline: 2px solid rgba(88, 141, 255, 0.6);
+  outline-offset: 2px;
 }
 
 /* Summary */
