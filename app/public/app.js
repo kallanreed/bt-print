@@ -93,6 +93,19 @@ function toGrayscale(imageData) {
   return grayscale;
 }
 
+function applyBrightnessContrast(grayscale, brightness, contrast) {
+  const shift = brightness * 1.28;
+  const factor = contrast >= 0 ? 1 + contrast / 50 : 1 + contrast / 100;
+  const result = new Float32Array(grayscale.length);
+
+  for (let i = 0; i < grayscale.length; i += 1) {
+    const adjusted = (grayscale[i] - 128) * factor + 128 + shift;
+    result[i] = adjusted < 0 ? 0 : adjusted > 255 ? 255 : adjusted;
+  }
+
+  return result;
+}
+
 function thresholdDither(grayscale, width, height, threshold) {
   const output = new Uint8ClampedArray(width * height);
 
@@ -155,8 +168,35 @@ function floydSteinbergDither(grayscale, width, height) {
   return output;
 }
 
+function atkinsonDither(grayscale, width, height) {
+  const buffer = Float32Array.from(grayscale);
+  const output = new Uint8ClampedArray(width * height);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const oldValue = buffer[index];
+      const newValue = oldValue >= 128 ? 255 : 0;
+      const error = oldValue - newValue;
+
+      output[index] = newValue;
+
+      diffuseError(buffer, width, height, x + 1, y, error, 1 / 8);
+      diffuseError(buffer, width, height, x + 2, y, error, 1 / 8);
+      diffuseError(buffer, width, height, x - 1, y + 1, error, 1 / 8);
+      diffuseError(buffer, width, height, x, y + 1, error, 1 / 8);
+      diffuseError(buffer, width, height, x + 1, y + 1, error, 1 / 8);
+      diffuseError(buffer, width, height, x, y + 2, error, 1 / 8);
+    }
+  }
+
+  return output;
+}
+
 function ditherImage(grayscale, width, height, algorithm, threshold) {
   switch (algorithm) {
+    case "atkinson":
+      return atkinsonDither(grayscale, width, height);
     case "ordered":
       return orderedDither(grayscale, width, height);
     case "threshold":
@@ -212,78 +252,79 @@ function renderApp(root) {
   root.innerHTML = `
     <main class="layout">
       <header class="hero">
-        <p class="eyebrow">Cloudflare Pages app</p>
-        <h1>Thermal image sender</h1>
-        <p class="lede">
-          Upload an image, scale it down to thermal-printer width, dither it in the browser,
-          and preview the black-and-white result before BLE transport is added.
-        </p>
+        <h1>bt&#8209;print</h1>
+        <p class="lede">Upload an image and preview it as a dithered bitmap for thermal printing.</p>
       </header>
 
-      <section class="card">
-        <h2>Image pipeline</h2>
-        <form id="job-form" class="grid">
-          <label>
-            Image file
+      <section class="card source-card">
+        <div class="source-row">
+          <label class="file-label">
             <input id="file-input" type="file" accept="image/*" />
           </label>
-          <label class="paste-label">
-            Paste from clipboard
-            <button id="paste-btn" type="button">Paste image</button>
-          </label>
+          <button id="paste-btn" type="button">Paste</button>
+        </div>
+        <p id="status" class="status">Choose an image or paste one to begin.</p>
+      </section>
+
+      <section class="card settings-card">
+        <div class="settings-grid">
           <label>
-            Max output width
+            Output width
             <input id="width-input" type="number" min="1" max="${MAX_WIDTH}" value="${MAX_WIDTH}" />
           </label>
           <label>
-            Dithering
+            Algorithm
             <select id="algorithm-input">
               <option value="floyd-steinberg">Floyd-Steinberg</option>
+              <option value="atkinson">Atkinson</option>
               <option value="ordered">Ordered Bayer</option>
               <option value="threshold">Threshold</option>
             </select>
           </label>
           <label>
-            Background color
+            Background
             <input id="bg-color-input" type="color" value="#ffffff" />
           </label>
-          <label id="threshold-label">
-            Threshold
-            <input id="threshold-input" type="range" min="0" max="255" value="128" />
-          </label>
-        </form>
-        <p id="threshold-value" class="meta"></p>
-        <p id="status" class="status">Choose an image or paste one to begin.</p>
-        <dl id="job-summary" class="summary"></dl>
+        </div>
+        <div class="sliders">
+          <div class="slider-row">
+            <label for="brightness-input"><span>Brightness</span><span id="brightness-display">0</span></label>
+            <input id="brightness-input" type="range" min="-100" max="100" value="0" step="1" />
+          </div>
+          <div class="slider-row">
+            <label for="contrast-input"><span>Contrast</span><span id="contrast-display">0</span></label>
+            <input id="contrast-input" type="range" min="-100" max="100" value="0" step="1" />
+          </div>
+          <div class="slider-row" id="threshold-row">
+            <label for="threshold-input"><span>Threshold</span><span id="threshold-display">128</span></label>
+            <input id="threshold-input" type="range" min="0" max="255" value="128" step="1" />
+          </div>
+        </div>
       </section>
 
       <section class="preview-grid">
         <article class="card preview-card">
-          <div class="card-header">
-            <h2>Resized source</h2>
-            <p class="meta">Scaled to the thermal output size before dithering.</p>
-          </div>
+          <h2>Resized source</h2>
           <div class="canvas-frame">
             <canvas id="source-canvas"></canvas>
           </div>
         </article>
         <article class="card preview-card">
-          <div class="card-header">
-            <h2>Dithered preview</h2>
-            <p class="meta">Black-and-white output shown at the packed bitmap size.</p>
-          </div>
+          <h2>Dithered preview</h2>
           <div class="canvas-frame">
             <canvas id="output-canvas"></canvas>
           </div>
         </article>
       </section>
 
-      <section class="card">
-        <h2>Transport snapshot</h2>
+      <dl id="job-summary" class="summary"></dl>
+
+      <details class="card transport-card">
+        <summary>Transport details</summary>
         <p class="meta">Service UUID <code>${BLE_SCAFFOLD_STATE.serviceUuid}</code></p>
         <p class="meta">Write characteristic <code>${BLE_SCAFFOLD_STATE.writeCharacteristicUuid}</code></p>
         <p class="meta">Notify characteristic <code>${BLE_SCAFFOLD_STATE.notifyCharacteristicUuid}</code></p>
-      </section>
+      </details>
     </main>
   `;
 
@@ -292,9 +333,13 @@ function renderApp(root) {
   const widthInput = root.querySelector("#width-input");
   const algorithmInput = root.querySelector("#algorithm-input");
   const bgColorInput = root.querySelector("#bg-color-input");
-  const thresholdLabel = root.querySelector("#threshold-label");
+  const brightnessInput = root.querySelector("#brightness-input");
+  const brightnessDisplay = root.querySelector("#brightness-display");
+  const contrastInput = root.querySelector("#contrast-input");
+  const contrastDisplay = root.querySelector("#contrast-display");
+  const thresholdRow = root.querySelector("#threshold-row");
   const thresholdInput = root.querySelector("#threshold-input");
-  const thresholdValue = root.querySelector("#threshold-value");
+  const thresholdDisplay = root.querySelector("#threshold-display");
   const status = root.querySelector("#status");
   const summary = root.querySelector("#job-summary");
   const sourceCanvas = root.querySelector("#source-canvas");
@@ -306,9 +351,13 @@ function renderApp(root) {
     !widthInput ||
     !algorithmInput ||
     !bgColorInput ||
-    !thresholdLabel ||
+    !brightnessInput ||
+    !brightnessDisplay ||
+    !contrastInput ||
+    !contrastDisplay ||
+    !thresholdRow ||
     !thresholdInput ||
-    !thresholdValue ||
+    !thresholdDisplay ||
     !status ||
     !summary ||
     !sourceCanvas ||
@@ -317,18 +366,18 @@ function renderApp(root) {
     throw new Error("Image pipeline UI failed to initialize");
   }
 
-  const updateThresholdLabel = () => {
-    thresholdValue.textContent = `Threshold: ${thresholdInput.value}`;
+  const updateSliderDisplays = () => {
+    brightnessDisplay.textContent = brightnessInput.value;
+    contrastDisplay.textContent = contrastInput.value;
+    thresholdDisplay.textContent = thresholdInput.value;
   };
 
   const updateThresholdVisibility = () => {
-    const isThreshold = algorithmInput.value === "threshold";
-    thresholdLabel.style.display = isThreshold ? "" : "none";
-    thresholdValue.style.display = isThreshold ? "" : "none";
+    thresholdRow.style.display = algorithmInput.value === "threshold" ? "" : "none";
   };
 
   const renderJob = () => {
-    updateThresholdLabel();
+    updateSliderDisplays();
     updateThresholdVisibility();
 
     if (!state.image) {
@@ -354,7 +403,10 @@ function renderApp(root) {
     }
 
     const imageData = sourceContext.getImageData(0, 0, width, height);
-    const grayscale = toGrayscale(imageData);
+    const rawGrayscale = toGrayscale(imageData);
+    const brightness = Number(brightnessInput.value);
+    const contrast = Number(contrastInput.value);
+    const grayscale = applyBrightnessContrast(rawGrayscale, brightness, contrast);
     const algorithm = algorithmInput.value;
     const threshold = Number(thresholdInput.value);
     const dithered = ditherImage(grayscale, width, height, algorithm, threshold);
@@ -364,31 +416,23 @@ function renderApp(root) {
     const packedBitmap = packMonochrome(dithered, width, height);
     const envelope = buildEnvelope(width, height);
 
-    status.textContent = `Prepared ${state.fileName} at ${width} x ${height} using ${algorithm}.`;
+    status.textContent = `Ready — ${state.fileName}, ${width} \u00d7 ${height} px, ${algorithm}.`;
     summary.innerHTML = `
       <div>
         <dt>Source</dt>
-        <dd>${state.sourceWidth} x ${state.sourceHeight}</dd>
+        <dd>${state.sourceWidth} \u00d7 ${state.sourceHeight}</dd>
       </div>
       <div>
         <dt>Output</dt>
-        <dd>${width} x ${height}</dd>
+        <dd>${width} \u00d7 ${height}</dd>
       </div>
       <div>
         <dt>Stride</dt>
-        <dd>${envelope.strideBytes} bytes/row</dd>
+        <dd>${envelope.strideBytes} B/row</dd>
       </div>
       <div>
         <dt>Payload</dt>
-        <dd>${envelope.payloadLength} bytes</dd>
-      </div>
-      <div>
-        <dt>Packed buffer</dt>
-        <dd>${packedBitmap.length} bytes</dd>
-      </div>
-      <div>
-        <dt>Threshold</dt>
-        <dd>${threshold}</dd>
+        <dd>${packedBitmap.length} B</dd>
       </div>
     `;
   };
@@ -408,7 +452,7 @@ function renderApp(root) {
       return;
     }
 
-    status.textContent = `Loading ${file.name}...`;
+    status.textContent = `Loading ${file.name}\u2026`;
 
     try {
       const image = await loadImageFromFile(file);
@@ -420,7 +464,7 @@ function renderApp(root) {
   });
 
   pasteBtn.addEventListener("click", async () => {
-    status.textContent = "Reading clipboard...";
+    status.textContent = "Reading clipboard\u2026";
 
     try {
       const items = await navigator.clipboard.read();
@@ -437,7 +481,7 @@ function renderApp(root) {
       applyImageSource(image, "clipboard");
     } catch (error) {
       console.error(error);
-      status.textContent = "Unable to read clipboard. Try pressing Ctrl+V / Cmd+V instead.";
+      status.textContent = "Unable to read clipboard. Try Ctrl+V / Cmd+V instead.";
     }
   });
 
@@ -455,7 +499,7 @@ function renderApp(root) {
       return;
     }
 
-    status.textContent = "Loading pasted image...";
+    status.textContent = "Loading pasted image\u2026";
 
     try {
       const image = await loadImageFromFile(file);
@@ -469,9 +513,11 @@ function renderApp(root) {
   widthInput.addEventListener("input", renderJob);
   algorithmInput.addEventListener("input", renderJob);
   bgColorInput.addEventListener("input", renderJob);
+  brightnessInput.addEventListener("input", renderJob);
+  contrastInput.addEventListener("input", renderJob);
   thresholdInput.addEventListener("input", renderJob);
 
-  updateThresholdLabel();
+  updateSliderDisplays();
   updateThresholdVisibility();
 }
 
