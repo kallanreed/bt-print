@@ -26,6 +26,27 @@ select {
   font: inherit;
 }
 
+.grid button {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(88, 141, 255, 0.15);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.grid button:hover {
+  background: rgba(88, 141, 255, 0.28);
+}
+
+.grid input[type="color"] {
+  padding: 0.25rem 0.4rem;
+  height: 2.75rem;
+  cursor: pointer;
+}
+
 code {
   font-family: "SFMono-Regular", ui-monospace, monospace;
 }

@@ -37,7 +37,7 @@ function buildEnvelope(width, height) {
 }
 
 function calculateTargetSize(sourceWidth, sourceHeight, requestedWidth) {
-  const width = Math.min(clampDimension(requestedWidth), sourceWidth || MAX_WIDTH);
+  const width = clampDimension(requestedWidth);
   const height = Math.max(1, Math.round((sourceHeight * width) / sourceWidth));
 
   return { width, height };
@@ -62,7 +62,7 @@ function loadImageFromFile(file) {
   });
 }
 
-function drawSourceToCanvas(image, canvas, width, height) {
+function drawSourceToCanvas(image, canvas, width, height, bgColor) {
   const context = canvas.getContext("2d");
 
   if (!context) {
@@ -72,7 +72,8 @@ function drawSourceToCanvas(image, canvas, width, height) {
   canvas.width = width;
   canvas.height = height;
   context.imageSmoothingEnabled = true;
-  context.clearRect(0, 0, width, height);
+  context.fillStyle = bgColor;
+  context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
 }
 
@@ -226,6 +227,10 @@ function renderApp(root) {
             Image file
             <input id="file-input" type="file" accept="image/*" />
           </label>
+          <label class="paste-label">
+            Paste from clipboard
+            <button id="paste-btn" type="button">Paste image</button>
+          </label>
           <label>
             Max output width
             <input id="width-input" type="number" min="1" max="${MAX_WIDTH}" value="${MAX_WIDTH}" />
@@ -239,12 +244,16 @@ function renderApp(root) {
             </select>
           </label>
           <label>
+            Background color
+            <input id="bg-color-input" type="color" value="#ffffff" />
+          </label>
+          <label id="threshold-label">
             Threshold
             <input id="threshold-input" type="range" min="0" max="255" value="128" />
           </label>
         </form>
         <p id="threshold-value" class="meta"></p>
-        <p id="status" class="status">Choose an image to begin.</p>
+        <p id="status" class="status">Choose an image or paste one to begin.</p>
         <dl id="job-summary" class="summary"></dl>
       </section>
 
@@ -279,8 +288,11 @@ function renderApp(root) {
   `;
 
   const fileInput = root.querySelector("#file-input");
+  const pasteBtn = root.querySelector("#paste-btn");
   const widthInput = root.querySelector("#width-input");
   const algorithmInput = root.querySelector("#algorithm-input");
+  const bgColorInput = root.querySelector("#bg-color-input");
+  const thresholdLabel = root.querySelector("#threshold-label");
   const thresholdInput = root.querySelector("#threshold-input");
   const thresholdValue = root.querySelector("#threshold-value");
   const status = root.querySelector("#status");
@@ -290,8 +302,11 @@ function renderApp(root) {
 
   if (
     !fileInput ||
+    !pasteBtn ||
     !widthInput ||
     !algorithmInput ||
+    !bgColorInput ||
+    !thresholdLabel ||
     !thresholdInput ||
     !thresholdValue ||
     !status ||
@@ -306,8 +321,15 @@ function renderApp(root) {
     thresholdValue.textContent = `Threshold: ${thresholdInput.value}`;
   };
 
+  const updateThresholdVisibility = () => {
+    const isThreshold = algorithmInput.value === "threshold";
+    thresholdLabel.style.display = isThreshold ? "" : "none";
+    thresholdValue.style.display = isThreshold ? "" : "none";
+  };
+
   const renderJob = () => {
     updateThresholdLabel();
+    updateThresholdVisibility();
 
     if (!state.image) {
       summary.innerHTML = "";
@@ -323,7 +345,8 @@ function renderApp(root) {
 
     widthInput.value = String(width);
 
-    drawSourceToCanvas(state.image, sourceCanvas, width, height);
+    const bgColor = bgColorInput.value;
+    drawSourceToCanvas(state.image, sourceCanvas, width, height, bgColor);
     const sourceContext = sourceCanvas.getContext("2d");
 
     if (!sourceContext) {
@@ -370,6 +393,14 @@ function renderApp(root) {
     `;
   };
 
+  const applyImageSource = (image, name) => {
+    state.image = image;
+    state.fileName = name;
+    state.sourceWidth = image.naturalWidth || image.width;
+    state.sourceHeight = image.naturalHeight || image.height;
+    renderJob();
+  };
+
   fileInput.addEventListener("change", async () => {
     const [file] = fileInput.files ?? [];
 
@@ -381,24 +412,67 @@ function renderApp(root) {
 
     try {
       const image = await loadImageFromFile(file);
-
-      state.image = image;
-      state.fileName = file.name;
-      state.sourceWidth = image.naturalWidth || image.width;
-      state.sourceHeight = image.naturalHeight || image.height;
-
-      renderJob();
+      applyImageSource(image, file.name);
     } catch (error) {
       console.error(error);
       status.textContent = "Unable to load the selected image.";
     }
   });
 
+  pasteBtn.addEventListener("click", async () => {
+    status.textContent = "Reading clipboard...";
+
+    try {
+      const items = await navigator.clipboard.read();
+      const imageItem = items.find(item => item.types.some(type => type.startsWith("image/")));
+
+      if (!imageItem) {
+        status.textContent = "No image found in clipboard.";
+        return;
+      }
+
+      const imageType = imageItem.types.find(type => type.startsWith("image/"));
+      const blob = await imageItem.getType(imageType);
+      const image = await loadImageFromFile(new File([blob], "clipboard", { type: imageType }));
+      applyImageSource(image, "clipboard");
+    } catch (error) {
+      console.error(error);
+      status.textContent = "Unable to read clipboard. Try pressing Ctrl+V / Cmd+V instead.";
+    }
+  });
+
+  document.addEventListener("paste", async (event) => {
+    const items = [...(event.clipboardData?.items ?? [])];
+    const imageItem = items.find(item => item.type.startsWith("image/"));
+
+    if (!imageItem) {
+      return;
+    }
+
+    const file = imageItem.getAsFile();
+
+    if (!file) {
+      return;
+    }
+
+    status.textContent = "Loading pasted image...";
+
+    try {
+      const image = await loadImageFromFile(file);
+      applyImageSource(image, "clipboard");
+    } catch (error) {
+      console.error(error);
+      status.textContent = "Unable to load the pasted image.";
+    }
+  });
+
   widthInput.addEventListener("input", renderJob);
   algorithmInput.addEventListener("input", renderJob);
+  bgColorInput.addEventListener("input", renderJob);
   thresholdInput.addEventListener("input", renderJob);
 
   updateThresholdLabel();
+  updateThresholdVisibility();
 }
 
 const root = document.querySelector("#app");
