@@ -1,0 +1,10 @@
+.DS_Store
+**/.DS_Store
+docs/*.pdf
+app/.dev.vars
+app/.env
+app/.env.*
+app/node_modules/
+firmware/.pio/
+firmware/.vscode/
+app/.wrangler
