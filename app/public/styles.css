@@ -118,6 +118,33 @@ code {
   background: rgba(88, 141, 255, 0.28);
 }
 
+/* Off-screen textarea used as a reliable paste-event sink on mobile.
+   Kept in the tab order only when explicitly focused by the paste button. */
+#paste-target {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+#copy-btn {
+  margin-top: 0.75rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(88, 141, 255, 0.15);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+}
+
+#copy-btn:hover {
+  background: rgba(88, 141, 255, 0.28);
+}
+
 .status {
   margin: 0.75rem 0 0;
   font-size: 0.875rem;

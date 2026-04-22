@@ -312,8 +312,9 @@ function renderApp(root) {
         <article class="card preview-card">
           <h2>Dithered preview</h2>
           <div class="canvas-frame">
-            <canvas id="output-canvas" title="Click to copy to clipboard"></canvas>
+            <canvas id="output-canvas"></canvas>
           </div>
+          <button id="copy-btn" type="button">Copy to clipboard</button>
         </article>
       </section>
 
@@ -344,6 +345,16 @@ function renderApp(root) {
   const summary = root.querySelector("#job-summary");
   const sourceCanvas = root.querySelector("#source-canvas");
   const outputCanvas = root.querySelector("#output-canvas");
+  const copyBtn = root.querySelector("#copy-btn");
+
+  // Hidden off-screen textarea used as a reliable paste-event sink on mobile
+  // browsers (Bluefy, Edge) where document-level paste events only fire when
+  // a focusable element is active.
+  const pasteTarget = document.createElement("textarea");
+  pasteTarget.id = "paste-target";
+  pasteTarget.setAttribute("aria-label", "Paste image here");
+  pasteTarget.setAttribute("tabindex", "-1");
+  document.body.appendChild(pasteTarget);
 
   if (
     !fileInput ||
@@ -361,7 +372,8 @@ function renderApp(root) {
     !status ||
     !summary ||
     !sourceCanvas ||
-    !outputCanvas
+    !outputCanvas ||
+    !copyBtn
   ) {
     throw new Error("Image pipeline UI failed to initialize");
   }
@@ -463,6 +475,36 @@ function renderApp(root) {
     }
   });
 
+  // Shared handler for paste events received via clipboardData (document or
+  // the pasteTarget textarea).  Returns true when an image was found so the
+  // caller can call preventDefault.
+  const handleImagePaste = async (clipboardData) => {
+    const items = [...(clipboardData?.items ?? [])];
+    const imageItem = items.find(item => item.type.startsWith("image/"));
+
+    if (!imageItem) {
+      return false;
+    }
+
+    const file = imageItem.getAsFile();
+
+    if (!file) {
+      return false;
+    }
+
+    status.textContent = "Loading pasted image\u2026";
+
+    try {
+      const image = await loadImageFromFile(file);
+      applyImageSource(image, "clipboard");
+    } catch (error) {
+      console.error(error);
+      status.textContent = "Unable to load the pasted image.";
+    }
+
+    return true;
+  };
+
   pasteBtn.addEventListener("click", async () => {
     status.textContent = "Reading clipboard\u2026";
 
@@ -481,52 +523,57 @@ function renderApp(root) {
       applyImageSource(image, "clipboard");
     } catch (error) {
       console.error(error);
-      status.textContent = "Unable to read clipboard. Try Ctrl+V / Cmd+V instead.";
+      // clipboard.read() is blocked on most mobile browsers.  Focus the
+      // off-screen textarea so the OS paste gesture delivers its paste event
+      // to a concrete element, which works more reliably than relying on the
+      // document-level paste event in Bluefy / Edge / Safari.
+      pasteTarget.focus();
+      status.textContent = "Paste an image using your device\u2019s paste gesture or Ctrl+V / Cmd+V.";
     }
   });
 
   document.addEventListener("paste", async (event) => {
-    const items = [...(event.clipboardData?.items ?? [])];
-    const imageItem = items.find(item => item.type.startsWith("image/"));
-
-    if (!imageItem) {
-      return;
-    }
-
-    const file = imageItem.getAsFile();
-
-    if (!file) {
-      return;
-    }
-
-    status.textContent = "Loading pasted image\u2026";
-
-    try {
-      const image = await loadImageFromFile(file);
-      applyImageSource(image, "clipboard");
-    } catch (error) {
-      console.error(error);
-      status.textContent = "Unable to load the pasted image.";
+    const handled = await handleImagePaste(event.clipboardData);
+    if (handled) {
+      event.preventDefault();
     }
   });
 
-  outputCanvas.addEventListener("click", async () => {
+  // Also listen on the textarea so that paste events from a focused element
+  // are captured in browsers (Bluefy, Edge) that do not reliably fire the
+  // document-level paste event without an active focusable element.
+  pasteTarget.addEventListener("paste", async (event) => {
+    event.preventDefault();
+    await handleImagePaste(event.clipboardData);
+  });
+
+  // Safari requires the Promise to be passed directly to ClipboardItem rather
+  // than resolving it first.  If the blob is awaited before constructing
+  // ClipboardItem the call falls outside the synchronous user-gesture frame
+  // and Safari refuses to write to the clipboard.
+  const copyOutputToClipboard = async () => {
     if (!state.image) {
       return;
     }
 
     try {
-      const blob = await new Promise((resolve, reject) =>
-        outputCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas toBlob returned null."))), "image/png")
+      const blobPromise = new Promise((resolve, reject) =>
+        outputCanvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob returned null."))),
+          "image/png"
+        )
       );
 
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
       status.textContent = "Output copied to clipboard.";
     } catch (error) {
       console.error(error);
       status.textContent = "Unable to copy output to clipboard.";
     }
-  });
+  };
+
+  outputCanvas.addEventListener("click", copyOutputToClipboard);
+  copyBtn.addEventListener("click", copyOutputToClipboard);
 
   widthInput.addEventListener("input", renderJob);
   algorithmInput.addEventListener("input", renderJob);
