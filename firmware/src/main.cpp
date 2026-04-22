@@ -28,30 +28,27 @@ void setup() {
 
   transferSession.Reset();
   bleService.Begin();
+
+  Serial.println("printer: probing configured baud");
   printerTransport.Begin(
       bt_print::config::kPrinterTxPin,
       bt_print::config::kPrinterRxPin,
       bt_print::config::kDefaultPrinterBaudRate);
-  const auto defaultStride = bt_print::CalculateStrideBytes(
-      bt_print::config::kDefaultImageWidthPx);
-  const auto defaultPayload = bt_print::CalculatePayloadLength(
-      bt_print::config::kDefaultImageWidthPx,
-      bt_print::config::kDefaultImageHeightPx);
-
-  Serial.printf(
-      "packet-types=%s,%s,%s,%s,%s,%s stride=%u payload=%lu\n",
-      bt_print::PacketTypeName(bt_print::PacketType::kTransferStart),
-      bt_print::PacketTypeName(bt_print::PacketType::kDataChunk),
-      bt_print::PacketTypeName(bt_print::PacketType::kTransferCommit),
-      bt_print::PacketTypeName(bt_print::PacketType::kReset),
-      bt_print::PacketTypeName(bt_print::PacketType::kAck),
-      bt_print::PacketTypeName(bt_print::PacketType::kError),
-      defaultStride,
-      static_cast<unsigned long>(defaultPayload));
+  Serial.println("printer-debug: before BEGIN line");
+  printerTransport.PrintLine("BEGIN RASTER PROBE");
+  Serial.println("printer-debug: after BEGIN line");
+  Serial.println("printer-debug: before raster probe");
+  printerTransport.PrintRasterProbe();
+  Serial.println("printer-debug: after raster probe");
+  Serial.println("printer-debug: settling before END line");
+  delay(1000);
+  Serial.println("printer-debug: before END line");
+  printerTransport.PrintLine("END RASTER PROBE");
+  Serial.println("printer-debug: after END line");
 }
 
 void loop() {
-  bleService.Poll(transferSession);
-  printerTransport.Poll();
+  //bleService.Poll(transferSession);
+  //printerTransport.Poll();
   delay(50);
 }
