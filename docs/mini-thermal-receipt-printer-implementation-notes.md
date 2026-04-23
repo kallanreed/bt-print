@@ -173,10 +173,69 @@ It is **not** a raw printer command reference. For exact byte-level command gene
 - Ensure output width is **8-pixel aligned**.
 - Optimize for **dithered, low-density imagery** instead of solid black fills.
 
+## ESC/POS command reference
+
+Derived from `docs/Adafruit_Thermal.h` and the Adafruit_Thermal library source.
+These are the commands actually used by the Adafruit thermal printer family.
+
+### Confirmed hardware settings (our unit)
+
+- **Baud rate: 19200** (read from self-test page)
+- **UART: Serial2 on ESP32, GPIO17 TX**
+
+### Command bytes
+
+| Purpose | Bytes | Notes |
+|---------|-------|-------|
+| Initialize | `1B 40` | ESC @ — resets all settings; send on startup |
+| Heat config | `1B 37 n1 n2 n3` | ESC 7 — n1=max dots (8 dots/step), n2=heat time (10 µs/step), n3=heat interval (10 µs/step) |
+| Print density | `12 23 n` | DC2 # — n = `(breakTime << 5) \| density` |
+| **Print bitmap row** | `12 2A rows stride [data…]` | DC2 * — rows up to 255, stride = ceil(width/8), data is rows×stride bytes |
+| Feed text lines | `1B 64 n` | ESC d — feeds n text lines |
+| Feed dot rows | `1B 4A n` | ESC J — feeds n individual dot rows |
+
+### Recommended init values (from Adafruit library defaults)
+
+```
+Heat config:    1B 37 0B 78 28   (dots=11, time=120×10µs=1200µs, interval=40×10µs=400µs)
+Print density:  12 23 4A         (breakTime=2, density=10  →  (2<<5)|10 = 0x4A)
+```
+
+### Bitmap format
+
+- 1 bit per pixel, **MSB first** — bit 7 of byte 0 is the leftmost pixel
+- **1 = black dot, 0 = white** (no dot)
+- Row stride = `ceil(width / 8)` bytes; 384 px wide → 48 bytes/row
+- Send via DC2 * with `rows=1` per call and wait 30 ms between rows (see throttling below)
+
+### Timing constants (firmware 2.68, also correct for 2.2)
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `dotPrintTime` | 30 000 µs | Minimum time per printed dot row |
+| `dotFeedTime` | 2 100 µs | Time per fed dot row |
+| `charHeight` | 24 dots | Default text line height in dot rows |
+
+ESC d 3 lines → wait `3 × 24 × 2100 µs = 151 200 µs` (~151 ms).
+
+### Throttling — critical
+
+The printer's serial receive buffer is small (estimated ~256 bytes for CSN-A2 chipset).
+Sending a full row's worth of data at UART speed is safe; sending multiple rows at once
+overflows the buffer silently and produces a blank print.
+
+**Required approach: one dot row per DC2 * command, 30 ms between rows.**
+
+At 19200 baud, transmitting one row (48 bytes + 4-byte header = 52 bytes) takes ~27 ms,
+which fits within the 30 ms print budget. The printer is never ahead of the sender.
+
+### Mini (#597) cable pinout
+
+- **Black = GND**
+- **Yellow = printer RX** (data in — connect to ESP32 TX)
+- **Green = printer TX** (data out — optional, needed for paper status only)
+
 ## Open questions this PDF does not settle
 
-- Exact byte-level printer commands for raster image output
-- Preferred command set for our specific printer model/chipset
-- Exact warm-up / inter-line pacing values we should use from custom firmware
-- Whether the specific hardware unit we use exposes DTR without modification
-- Safe voltage level for printer TX on the exact unit we wire to the ESP32
+- Whether our specific unit exposes DTR without hardware modification
+- Safe voltage level for printer TX on our exact unit (may be 5V — check before wiring to ESP32 RX)

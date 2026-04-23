@@ -1,6 +1,7 @@
 .DS_Store
 **/.DS_Store
 docs/*.pdf
+docs/Adafruit*
 app/.dev.vars
 app/.env
 app/.env.*
