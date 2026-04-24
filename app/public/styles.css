@@ -170,45 +170,44 @@ button:disabled {
 
 /* Settings */
 
-.settings-grid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: 1fr 1fr;
-}
-
-.settings-grid label {
-  display: grid;
-  gap: 0.35rem;
+.settings-row {
+  display: flex;
+  gap: 0.5rem;
   font-size: 0.875rem;
-  color: #c9d2e3;
 }
 
-.settings-grid input,
-.settings-grid select {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
+.settings-row input,
+.settings-row select,
+.settings-row button {
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  box-sizing: border-box;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: #111722;
   color: inherit;
 }
 
-.algo-row {
-  display: flex;
-  gap: 0.5rem;
+.settings-row input[type="number"] {
+  width: 6.5rem;
+  flex-shrink: 0;
 }
 
-.algo-row select {
+.settings-row select {
   flex: 1;
 }
 
-.algo-row input[type="color"] {
+.settings-row input[type="color"],
+.settings-row button {
   width: 2.75rem;
-  height: 100%;
-  padding: 0.3rem;
-  box-sizing: border-box;
+  padding: 0.35rem;
   flex-shrink: 0;
   cursor: pointer;
+}
+
+.settings-row button {
+  font-size: 1.1rem;
+  line-height: 1;
 }
 
 /* Sliders */
@@ -216,20 +215,25 @@ button:disabled {
 .sliders {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-  margin-top: 1rem;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .slider-row label {
-  display: flex;
-  justify-content: space-between;
+  width: 5.5rem;
+  flex-shrink: 0;
   font-size: 0.875rem;
   color: #c9d2e3;
-  margin-bottom: 0.3rem;
 }
 
 .slider-row input[type="range"] {
-  width: 100%;
+  flex: 1;
   accent-color: #588dff;
   cursor: pointer;
 }

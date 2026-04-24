@@ -49,6 +49,7 @@ bool IsControlPacket(const PacketType type) {
   return type == PacketType::kTransferStart ||
          type == PacketType::kTransferCommit ||
          type == PacketType::kReset ||
+         type == PacketType::kConfigure ||
          type == PacketType::kAck ||
          type == PacketType::kError;
 }
@@ -67,6 +68,8 @@ const char* PacketTypeName(const PacketType type) {
       return "ack";
     case PacketType::kError:
       return "error";
+    case PacketType::kConfigure:
+      return "configure";
   }
 
   return "unknown";
@@ -128,6 +131,20 @@ bool ParseImageEnvelope(
   envelope.height = ReadUint16Le(data + 2);
   envelope.strideBytes = ReadUint16Le(data + 4);
   envelope.payloadLength = ReadUint32Le(data + 6);
+  return true;
+}
+
+bool ParsePrinterConfig(
+    const uint8_t* data,
+    const size_t length,
+    PrinterConfig& config) {
+  if (data == nullptr || length < kPrinterConfigSize) {
+    return false;
+  }
+
+  config.heatDots = data[0];
+  config.heatTime = data[1];
+  config.heatInterval = data[2];
   return true;
 }
 

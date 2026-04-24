@@ -195,6 +195,20 @@ void BleService::HandleWrite(const uint8_t* data, const size_t length) {
       NotifyAck(request);
       return;
 
+    case PacketType::kConfigure: {
+      PrinterConfig config{};
+      if (request.payloadLength != kPrinterConfigSize ||
+          !ParsePrinterConfig(
+              data + kPacketHeaderSize, request.payloadLength, config)) {
+        NotifyError(request, ProtocolError::kPayloadLengthMismatch);
+        return;
+      }
+
+      printerTransport_->Configure(config);
+      NotifyAck(request);
+      return;
+    }
+
     case PacketType::kAck:
     case PacketType::kError:
       NotifyError(request, ProtocolError::kInvalidPacketType);

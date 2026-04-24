@@ -17,10 +17,19 @@ void PrinterTransport::Begin(
   // Use a gentler print profile while bringing up raster mode so we can
   // distinguish protocol problems from power/current-limit problems.
   printer_.setHeatConfig(7, 120, 120);
-  printer_.setPrintDensity(12, 4);
+  printer_.setPrintDensity(14, 4);
   // Our printer only behaved reliably when raster output was limited to a
   // single dot row per DC2 * command.
   printer_.setMaxChunkHeight(1);
+}
+
+void PrinterTransport::Configure(const PrinterConfig& config) {
+  Serial.printf(
+      "printer: configure dots=%u time=%u interval=%u\n",
+      static_cast<unsigned>(config.heatDots),
+      static_cast<unsigned>(config.heatTime),
+      static_cast<unsigned>(config.heatInterval));
+  printer_.setHeatConfig(config.heatDots, config.heatTime, config.heatInterval);
 }
 
 void PrinterTransport::Poll() {}

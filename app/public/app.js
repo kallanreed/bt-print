@@ -10,7 +10,8 @@ const PACKET_TYPE = {
   TRANSFER_COMMIT: 0x03,
   RESET: 0x04,
   ACK: 0x05,
-  ERROR: 0x06
+  ERROR: 0x06,
+  CONFIGURE: 0x07
 };
 const PACKET_TYPE_NAME = new Map([
   [PACKET_TYPE.TRANSFER_START, "transfer-start"],
@@ -18,7 +19,8 @@ const PACKET_TYPE_NAME = new Map([
   [PACKET_TYPE.TRANSFER_COMMIT, "transfer-commit"],
   [PACKET_TYPE.RESET, "reset"],
   [PACKET_TYPE.ACK, "ack"],
-  [PACKET_TYPE.ERROR, "error"]
+  [PACKET_TYPE.ERROR, "error"],
+  [PACKET_TYPE.CONFIGURE, "configure"]
 ]);
 const PROTOCOL_ERROR_NAME = new Map([
   [0x00, "none"],
@@ -40,12 +42,19 @@ const ERROR_PAYLOAD_SIZE = 8;
 const MAX_ATT_PAYLOAD = 244;
 const MAX_DATA_PAYLOAD = MAX_ATT_PAYLOAD - PACKET_HEADER_SIZE;
 const ACK_TIMEOUT_MS = 10000;
+const PRINTER_CONFIG_SIZE = 3;
+
+const PAPER_PRESETS = {
+  normal:   { label: "Normal paper",   heatDots: 7, heatTime: 120, heatInterval: 80 },
+  sticker:  { label: "Sticker paper",  heatDots: 2, heatTime: 180, heatInterval: 80 },
+};
 
 const state = {
   fileName: "",
   image: null,
   sourceWidth: 0,
   sourceHeight: 0,
+  rotation: 0,
   render: {
     envelope: null,
     packedBitmap: null,
@@ -134,7 +143,7 @@ function loadImageFromFile(file) {
   });
 }
 
-function drawSourceToCanvas(image, canvas, width, height, bgColor) {
+function drawSourceToCanvas(image, canvas, width, height, bgColor, rotation) {
   const context = canvas.getContext("2d");
 
   if (!context) {
@@ -146,7 +155,19 @@ function drawSourceToCanvas(image, canvas, width, height, bgColor) {
   context.imageSmoothingEnabled = true;
   context.fillStyle = bgColor;
   context.fillRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
+
+  if (rotation) {
+    context.save();
+    context.translate(width / 2, height / 2);
+    context.rotate((rotation * Math.PI) / 180);
+    const swapped = rotation === 90 || rotation === 270;
+    const dw = swapped ? height : width;
+    const dh = swapped ? width : height;
+    context.drawImage(image, -dw / 2, -dh / 2, dw, dh);
+    context.restore();
+  } else {
+    context.drawImage(image, 0, 0, width, height);
+  }
 }
 
 function toGrayscale(imageData) {
@@ -431,8 +452,8 @@ function setBleStatus(message) {
 }
 
 function setSendStatus(message) {
-  if (ui.sendStatus) {
-    ui.sendStatus.textContent = message;
+  if (ui.bleStatus) {
+    ui.bleStatus.textContent = message;
   }
 }
 
@@ -445,7 +466,7 @@ function updateTransportUI() {
   ui.connectBtn.disabled = !state.ble.supported || state.ble.busy;
   ui.connectBtn.textContent = state.ble.connected ? "Disconnect" : "Connect printer";
   ui.connectBtn.className = state.ble.connected ? "secondary" : "primary";
-  ui.sendBtn.disabled = !state.ble.connected || !hasBitmap || state.ble.busy;
+  ui.sendBtn.disabled = !state.ble.supported || !hasBitmap || state.ble.busy;
 
   if (ui.sendProgress) {
     const totalBytes = state.render.envelope?.payloadLength ?? 0;
@@ -592,6 +613,23 @@ async function sendResetPacket(transferId, sequence) {
   }
 }
 
+async function sendPrinterConfig(preset) {
+  if (!state.ble.writeCharacteristic || !state.ble.connected) {
+    return;
+  }
+
+  const config = PAPER_PRESETS[preset];
+  if (!config) {
+    return;
+  }
+
+  const payload = new Uint8Array([
+    config.heatDots, config.heatTime, config.heatInterval
+  ]);
+
+  await sendPacketAwaitAck(PACKET_TYPE.CONFIGURE, 0, 0, payload);
+}
+
 function handleBleNotification(event) {
   const dataView = event.target?.value;
 
@@ -661,7 +699,13 @@ function createTransferId() {
 
 async function sendPreparedBitmap() {
   if (!state.ble.connected) {
-    throw new Error("Connect to the printer before sending.");
+    setSendStatus("Connecting to printer...");
+    try {
+      await connectBle();
+    } catch {
+      updateTransportUI();
+      return;
+    }
   }
 
   if (!state.render.packedBitmap || !state.render.envelope) {
@@ -675,6 +719,9 @@ async function sendPreparedBitmap() {
   state.ble.transferId = transferId;
   state.ble.progressBytes = 0;
   state.ble.progressChunks = 0;
+
+  const paperType = ui.paperTypeInput?.value || "normal";
+  await sendPrinterConfig(paperType);
   updateTransportUI();
   setSendStatus(`Starting transfer ${transferId}...`);
 
@@ -731,35 +778,28 @@ function renderApp(root) {
       </section>
 
       <section class="card settings-card">
-        <div class="settings-grid">
-          <label>
-            Output width
-            <input id="width-input" type="number" min="1" max="${MAX_WIDTH}" value="${MAX_WIDTH}" />
-          </label>
-          <label>
-            Algorithm
-            <div class="algo-row">
-              <select id="algorithm-input">
-                <option value="atkinson" selected>Atkinson</option>
-                <option value="floyd-steinberg">Floyd-Steinberg</option>
-                <option value="ordered">Ordered Bayer</option>
-                <option value="threshold">Threshold</option>
-              </select>
-              <input id="bg-color-input" type="color" value="#ffffff" title="Background color" />
-            </div>
-          </label>
+        <div class="settings-row">
+          <input id="width-input" type="number" min="1" max="${MAX_WIDTH}" value="${MAX_WIDTH}" title="Output width" />
+          <select id="algorithm-input">
+            <option value="atkinson" selected>Atkinson</option>
+            <option value="floyd-steinberg">Floyd-Steinberg</option>
+            <option value="ordered">Ordered Bayer</option>
+            <option value="threshold">Threshold</option>
+          </select>
+          <input id="bg-color-input" type="color" value="#ffffff" title="Background color" />
+          <button id="rotate-btn" type="button" title="Rotate 90\u00B0">🔄</button>
         </div>
         <div class="sliders">
           <div class="slider-row">
-            <label for="brightness-input"><span>Brightness</span><span id="brightness-display">0</span></label>
+            <label for="brightness-input">Brightness</label>
             <input id="brightness-input" type="range" min="-100" max="100" value="0" step="1" />
           </div>
           <div class="slider-row">
-            <label for="contrast-input"><span>Contrast</span><span id="contrast-display">0</span></label>
+            <label for="contrast-input">Contrast</label>
             <input id="contrast-input" type="range" min="-100" max="100" value="0" step="1" />
           </div>
-          <div class="slider-row" id="threshold-row">
-            <label for="threshold-input"><span>Threshold</span><span id="threshold-display">128</span></label>
+          <div class="slider-row" id="threshold-row" style="display:none">
+            <label for="threshold-input">Threshold</label>
             <input id="threshold-input" type="range" min="0" max="255" value="128" step="1" />
           </div>
         </div>
@@ -773,14 +813,19 @@ function renderApp(root) {
       </article>
 
       <section class="card ble-card">
-        <h2>Bluetooth transport</h2>
         <div class="button-row">
           <button id="connect-btn" class="primary" type="button">Connect printer</button>
-          <button id="send-btn" class="primary" type="button">Send to printer</button>
+          <button id="send-btn" class="primary" type="button">Print</button>
         </div>
-        <p id="ble-status" class="status">Bluetooth not connected.</p>
-        <p id="send-status" class="meta">Prepare an image, then connect to the printer.</p>
         <progress id="send-progress" max="100" value="0"></progress>
+        <p id="ble-status" class="status">Bluetooth not connected.</p>
+        <div class="settings-row" style="margin-top: 0.5rem">
+          <label for="paper-type-input" style="align-self:center;font-size:0.875rem;color:#c9d2e3;white-space:nowrap">Paper</label>
+          <select id="paper-type-input">
+            <option value="normal" selected>Normal paper</option>
+            <option value="sticker">Sticker paper</option>
+          </select>
+        </div>
       </section>
 
       <details class="card details-card">
@@ -796,16 +841,14 @@ function renderApp(root) {
 
   const fileInput = root.querySelector("#file-input");
   const pasteBtn = root.querySelector("#paste-btn");
+  const rotateBtn = root.querySelector("#rotate-btn");
   const widthInput = root.querySelector("#width-input");
   const algorithmInput = root.querySelector("#algorithm-input");
   const bgColorInput = root.querySelector("#bg-color-input");
   const brightnessInput = root.querySelector("#brightness-input");
-  const brightnessDisplay = root.querySelector("#brightness-display");
   const contrastInput = root.querySelector("#contrast-input");
-  const contrastDisplay = root.querySelector("#contrast-display");
   const thresholdRow = root.querySelector("#threshold-row");
   const thresholdInput = root.querySelector("#threshold-input");
-  const thresholdDisplay = root.querySelector("#threshold-display");
   const status = root.querySelector("#status");
   const summary = root.querySelector("#job-summary");
   const outputCanvas = root.querySelector("#output-canvas");
@@ -813,8 +856,8 @@ function renderApp(root) {
   const connectBtn = root.querySelector("#connect-btn");
   const sendBtn = root.querySelector("#send-btn");
   const bleStatus = root.querySelector("#ble-status");
-  const sendStatus = root.querySelector("#send-status");
   const sendProgress = root.querySelector("#send-progress");
+  const paperTypeInput = root.querySelector("#paper-type-input");
   const chunkMeta = root.querySelector("#chunk-meta");
 
   // Hidden off-screen textarea used as a reliable paste-event sink on mobile
@@ -831,16 +874,14 @@ function renderApp(root) {
   if (
     !fileInput ||
     !pasteBtn ||
+    !rotateBtn ||
     !widthInput ||
     !algorithmInput ||
     !bgColorInput ||
     !brightnessInput ||
-    !brightnessDisplay ||
     !contrastInput ||
-    !contrastDisplay ||
     !thresholdRow ||
     !thresholdInput ||
-    !thresholdDisplay ||
     !status ||
     !summary ||
     !outputCanvas ||
@@ -848,8 +889,8 @@ function renderApp(root) {
     !connectBtn ||
     !sendBtn ||
     !bleStatus ||
-    !sendStatus ||
     !sendProgress ||
+    !paperTypeInput ||
     !chunkMeta
   ) {
     throw new Error("Image pipeline UI failed to initialize");
@@ -858,16 +899,14 @@ function renderApp(root) {
   Object.assign(ui, {
     fileInput,
     pasteBtn,
+    rotateBtn,
     widthInput,
     algorithmInput,
     bgColorInput,
     brightnessInput,
-    brightnessDisplay,
     contrastInput,
-    contrastDisplay,
     thresholdRow,
     thresholdInput,
-    thresholdDisplay,
     status,
     summary,
     sourceCanvas,
@@ -876,24 +915,18 @@ function renderApp(root) {
     connectBtn,
     sendBtn,
     bleStatus,
-    sendStatus,
     sendProgress,
+    paperTypeInput,
     chunkMeta,
     pasteTarget
   });
 
-  function updateSliderDisplays() {
-    ui.brightnessDisplay.textContent = ui.brightnessInput.value;
-    ui.contrastDisplay.textContent = ui.contrastInput.value;
-    ui.thresholdDisplay.textContent = ui.thresholdInput.value;
-  }
-
   function updateThresholdVisibility() {
-    ui.thresholdRow.style.display = ui.algorithmInput.value === "threshold" ? "" : "none";
+    ui.thresholdRow.style.display = ui.algorithmInput.value === "threshold" ? "flex" : "none";
   }
 
   function renderJob() {
-    updateSliderDisplays();
+
     updateThresholdVisibility();
 
     if (!state.image) {
@@ -910,17 +943,16 @@ function renderApp(root) {
     }
 
     const requestedWidth = clampDimension(Number(ui.widthInput.value));
-    const { width, height } = calculateTargetSize(
-      state.sourceWidth,
-      state.sourceHeight,
-      requestedWidth
-    );
+    const swapped = state.rotation === 90 || state.rotation === 270;
+    const srcW = swapped ? state.sourceHeight : state.sourceWidth;
+    const srcH = swapped ? state.sourceWidth : state.sourceHeight;
+    const { width, height } = calculateTargetSize(srcW, srcH, requestedWidth);
 
     ui.widthInput.value = String(width);
 
     const bgColor = ui.bgColorInput.value;
-    drawSourceToCanvas(state.image, ui.sourceCanvas, width, height, bgColor);
-    const sourceContext = ui.sourceCanvas.getContext("2d");
+    drawSourceToCanvas(state.image, ui.sourceCanvas, width, height, bgColor, state.rotation);
+    const sourceContext = ui.sourceCanvas.getContext("2d", { willReadFrequently: true });
 
     if (!sourceContext) {
       throw new Error("Missing source canvas context");
@@ -968,8 +1000,14 @@ function renderApp(root) {
     state.fileName = name;
     state.sourceWidth = image.naturalWidth || image.width;
     state.sourceHeight = image.naturalHeight || image.height;
+    state.rotation = 0;
     renderJob();
   }
+
+  rotateBtn.addEventListener("click", () => {
+    state.rotation = (state.rotation + 90) % 360;
+    renderJob();
+  });
 
   fileInput.addEventListener("change", async () => {
     const [file] = fileInput.files ?? [];
@@ -1118,7 +1156,6 @@ function renderApp(root) {
   ui.contrastInput.addEventListener("input", renderJob);
   ui.thresholdInput.addEventListener("input", renderJob);
 
-  updateSliderDisplays();
   updateThresholdVisibility();
   updateTransportUI();
 }

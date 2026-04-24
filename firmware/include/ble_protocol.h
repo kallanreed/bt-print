@@ -12,6 +12,7 @@ enum class PacketType : uint8_t {
   kReset = 0x04,
   kAck = 0x05,
   kError = 0x06,
+  kConfigure = 0x07,
 };
 
 enum class ProtocolError : uint8_t {
@@ -56,6 +57,13 @@ struct ErrorPayload {
   uint32_t bytesReceived;
 };
 
+struct PrinterConfig {
+  uint8_t heatDots;
+  uint8_t heatTime;
+  uint8_t heatInterval;
+};
+
+constexpr size_t kPrinterConfigSize = 3;
 constexpr size_t kPacketHeaderSize = 9;
 constexpr size_t kImageEnvelopeSize = 10;
 constexpr size_t kAckPayloadSize = 8;
@@ -79,6 +87,7 @@ const char* ProtocolErrorName(ProtocolError error);
 
 bool ParsePacketHeader(const uint8_t* data, size_t length, PacketHeader& header);
 bool ParseImageEnvelope(const uint8_t* data, size_t length, ImageEnvelope& envelope);
+bool ParsePrinterConfig(const uint8_t* data, size_t length, PrinterConfig& config);
 
 size_t EncodeAckPacket(
     const PacketHeader& request,

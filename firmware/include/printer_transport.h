@@ -14,6 +14,7 @@ class PrinterTransport {
   void Begin(int8_t txPin, int8_t rxPin, uint32_t baudRate);
   void Poll();
 
+  void Configure(const PrinterConfig& config);
   void PrintImage(const uint8_t* bitmap, const ImageEnvelope& envelope);
   void PrintLine(const char* text);
   void PrintRasterProbe();

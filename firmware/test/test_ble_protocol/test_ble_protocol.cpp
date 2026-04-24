@@ -140,7 +140,30 @@ void test_is_control_packet() {
   TEST_ASSERT_TRUE(IsControlPacket(PacketType::kReset));
   TEST_ASSERT_TRUE(IsControlPacket(PacketType::kAck));
   TEST_ASSERT_TRUE(IsControlPacket(PacketType::kError));
+  TEST_ASSERT_TRUE(IsControlPacket(PacketType::kConfigure));
   TEST_ASSERT_FALSE(IsControlPacket(PacketType::kDataChunk));
+}
+
+// --- ParsePrinterConfig ---
+
+void test_parse_config_valid() {
+  const uint8_t data[] = {7, 120, 120};
+  PrinterConfig config{};
+  TEST_ASSERT_TRUE(ParsePrinterConfig(data, sizeof(data), config));
+  TEST_ASSERT_EQUAL_UINT8(7, config.heatDots);
+  TEST_ASSERT_EQUAL_UINT8(120, config.heatTime);
+  TEST_ASSERT_EQUAL_UINT8(120, config.heatInterval);
+}
+
+void test_parse_config_null() {
+  PrinterConfig config{};
+  TEST_ASSERT_FALSE(ParsePrinterConfig(nullptr, 5, config));
+}
+
+void test_parse_config_too_short() {
+  const uint8_t data[2] = {};
+  PrinterConfig config{};
+  TEST_ASSERT_FALSE(ParsePrinterConfig(data, sizeof(data), config));
 }
 
 // --- PacketTypeName / ProtocolErrorName ---
@@ -179,6 +202,9 @@ int main() {
   RUN_TEST(test_encode_error_roundtrip);
   RUN_TEST(test_encode_error_null_output);
   RUN_TEST(test_is_control_packet);
+  RUN_TEST(test_parse_config_valid);
+  RUN_TEST(test_parse_config_null);
+  RUN_TEST(test_parse_config_too_short);
   RUN_TEST(test_packet_type_name);
   RUN_TEST(test_protocol_error_name);
 
