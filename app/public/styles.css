@@ -210,6 +210,95 @@ button:disabled {
   line-height: 1;
 }
 
+/* Text blocks */
+
+#text-blocks-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+#text-blocks-container:not(:empty) {
+  margin-top: 0.75rem;
+}
+
+.text-block-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.text-block-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.text-block-row input,
+.text-block-row select,
+.text-block-row button {
+  height: 2rem;
+  padding: 0 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111722;
+  color: inherit;
+  font-size: 0.8rem;
+  box-sizing: border-box;
+}
+
+.text-block-row .tb-text {
+  flex: 1;
+}
+
+.text-block-row .tb-font {
+  flex: 1;
+  min-width: 0;
+}
+
+.text-block-row .tb-fontsize,
+.text-block-row .tb-outline-width {
+  width: 3.5rem;
+  flex-shrink: 0;
+}
+
+.text-block-row input[type="range"] {
+  flex: 1;
+  accent-color: #588dff;
+  cursor: pointer;
+}
+
+.text-block-row input[type="color"] {
+  width: 2rem;
+  padding: 0.2rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.text-block-row label {
+  font-size: 0.8rem;
+  color: #c9d2e3;
+  flex-shrink: 0;
+}
+
+.text-block-row .tb-delete {
+  width: 2rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.25);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.text-block-row .tb-delete:hover {
+  background: rgba(255, 80, 80, 0.3);
+}
+
 /* Sliders */
 
 .sliders {

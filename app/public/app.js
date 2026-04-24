@@ -55,6 +55,8 @@ const state = {
   sourceWidth: 0,
   sourceHeight: 0,
   rotation: 0,
+  textBlocks: [],
+  nextTextBlockId: 1,
   render: {
     envelope: null,
     packedBitmap: null,
@@ -167,6 +169,34 @@ function drawSourceToCanvas(image, canvas, width, height, bgColor, rotation) {
     context.restore();
   } else {
     context.drawImage(image, 0, 0, width, height);
+  }
+}
+
+function drawTextBlocks(canvas, textBlocks) {
+  if (!textBlocks.length) return;
+
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  for (const block of textBlocks) {
+    if (!block.text) continue;
+
+    const fontSize = block.fontSize || 32;
+    context.font = `bold ${fontSize}px ${block.font || "Impact"}`;
+    context.textBaseline = "top";
+
+    const x = ((block.xPct ?? 0) / 100) * canvas.width;
+    const y = ((block.yPct ?? 0) / 100) * canvas.height;
+
+    if (block.outlineWidth > 0) {
+      context.strokeStyle = block.outlineColor || "#ffffff";
+      context.lineWidth = block.outlineWidth;
+      context.lineJoin = "round";
+      context.strokeText(block.text, x, y);
+    }
+
+    context.fillStyle = block.color || "#000000";
+    context.fillText(block.text, x, y);
   }
 }
 
@@ -788,7 +818,9 @@ function renderApp(root) {
           </select>
           <input id="bg-color-input" type="color" value="#ffffff" title="Background color" />
           <button id="rotate-btn" type="button" title="Rotate 90\u00B0">🔄</button>
+          <button id="add-text-btn" type="button" title="Add text">🔤</button>
         </div>
+        <div id="text-blocks-container"></div>
         <div class="sliders">
           <div class="slider-row">
             <label for="brightness-input">Brightness</label>
@@ -859,6 +891,8 @@ function renderApp(root) {
   const sendProgress = root.querySelector("#send-progress");
   const paperTypeInput = root.querySelector("#paper-type-input");
   const chunkMeta = root.querySelector("#chunk-meta");
+  const addTextBtn = root.querySelector("#add-text-btn");
+  const textBlocksContainer = root.querySelector("#text-blocks-container");
 
   // Hidden off-screen textarea used as a reliable paste-event sink on mobile
   // browsers (Bluefy, Edge) where document-level paste events only fire when
@@ -891,7 +925,9 @@ function renderApp(root) {
     !bleStatus ||
     !sendProgress ||
     !paperTypeInput ||
-    !chunkMeta
+    !chunkMeta ||
+    !addTextBtn ||
+    !textBlocksContainer
   ) {
     throw new Error("Image pipeline UI failed to initialize");
   }
@@ -918,11 +954,66 @@ function renderApp(root) {
     sendProgress,
     paperTypeInput,
     chunkMeta,
+    addTextBtn,
+    textBlocksContainer,
     pasteTarget
   });
 
   function updateThresholdVisibility() {
     ui.thresholdRow.style.display = ui.algorithmInput.value === "threshold" ? "flex" : "none";
+  }
+
+  function renderTextBlocksUI() {
+    ui.textBlocksContainer.innerHTML = "";
+    for (const block of state.textBlocks) {
+      const entry = document.createElement("div");
+      entry.className = "text-block-entry";
+      entry.innerHTML = `
+        <div class="text-block-row">
+          <input type="text" class="tb-text" placeholder="Enter text" value="${(block.text || "").replace(/"/g, "&quot;")}" />
+          <button type="button" class="tb-delete" title="Remove">✕</button>
+        </div>
+        <div class="text-block-row">
+          <select class="tb-font">
+            <option value="Impact"${block.font === "Impact" ? " selected" : ""}>Impact</option>
+            <option value="Arial Black"${block.font === "Arial Black" ? " selected" : ""}>Arial Black</option>
+            <option value="Georgia"${block.font === "Georgia" ? " selected" : ""}>Georgia</option>
+            <option value="Courier New"${block.font === "Courier New" ? " selected" : ""}>Courier New</option>
+          </select>
+          <input type="number" class="tb-fontsize" value="${block.fontSize || 32}" min="8" max="200" step="1" title="Font size" />
+          <input type="color" class="tb-color" value="${block.color || "#000000"}" title="Text color" />
+          <input type="color" class="tb-outline-color" value="${block.outlineColor || "#ffffff"}" title="Outline color" />
+          <input type="number" class="tb-outline-width" value="${block.outlineWidth ?? 2}" min="0" max="20" step="1" title="Outline width" />
+        </div>
+        <div class="text-block-row">
+          <label>X</label>
+          <input type="range" class="tb-x" value="${block.xPct ?? 0}" min="0" max="100" step="1" />
+          <label>Y</label>
+          <input type="range" class="tb-y" value="${block.yPct ?? 0}" min="0" max="100" step="1" />
+        </div>
+      `;
+
+      const update = (field, value) => {
+        block[field] = value;
+        renderJob();
+      };
+
+      entry.querySelector(".tb-text").addEventListener("input", (e) => update("text", e.target.value));
+      entry.querySelector(".tb-font").addEventListener("input", (e) => update("font", e.target.value));
+      entry.querySelector(".tb-fontsize").addEventListener("input", (e) => update("fontSize", Number(e.target.value)));
+      entry.querySelector(".tb-color").addEventListener("input", (e) => update("color", e.target.value));
+      entry.querySelector(".tb-outline-color").addEventListener("input", (e) => update("outlineColor", e.target.value));
+      entry.querySelector(".tb-outline-width").addEventListener("input", (e) => update("outlineWidth", Number(e.target.value)));
+      entry.querySelector(".tb-x").addEventListener("input", (e) => update("xPct", Number(e.target.value)));
+      entry.querySelector(".tb-y").addEventListener("input", (e) => update("yPct", Number(e.target.value)));
+      entry.querySelector(".tb-delete").addEventListener("click", () => {
+        state.textBlocks = state.textBlocks.filter((b) => b.id !== block.id);
+        renderTextBlocksUI();
+        renderJob();
+      });
+
+      ui.textBlocksContainer.appendChild(entry);
+    }
   }
 
   function renderJob() {
@@ -952,6 +1043,7 @@ function renderApp(root) {
 
     const bgColor = ui.bgColorInput.value;
     drawSourceToCanvas(state.image, ui.sourceCanvas, width, height, bgColor, state.rotation);
+    drawTextBlocks(ui.sourceCanvas, state.textBlocks);
     const sourceContext = ui.sourceCanvas.getContext("2d", { willReadFrequently: true });
 
     if (!sourceContext) {
@@ -1001,8 +1093,26 @@ function renderApp(root) {
     state.sourceWidth = image.naturalWidth || image.width;
     state.sourceHeight = image.naturalHeight || image.height;
     state.rotation = 0;
+    state.textBlocks = [];
+    state.nextTextBlockId = 1;
+    renderTextBlocksUI();
     renderJob();
   }
+
+  addTextBtn.addEventListener("click", () => {
+    state.textBlocks.push({
+      id: state.nextTextBlockId++,
+      text: "",
+      font: "Impact",
+      fontSize: 72,
+      color: "#ffffff",
+      outlineColor: "#000000",
+      outlineWidth: 10,
+      xPct: 0,
+      yPct: 0,
+    });
+    renderTextBlocksUI();
+  });
 
   rotateBtn.addEventListener("click", () => {
     state.rotation = (state.rotation + 90) % 360;
