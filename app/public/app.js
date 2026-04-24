@@ -442,8 +442,9 @@ function updateTransportUI() {
   }
 
   const hasBitmap = Boolean(state.render.packedBitmap && state.render.envelope);
-  ui.connectBtn.disabled = !state.ble.supported || state.ble.connected || state.ble.busy;
-  ui.disconnectBtn.disabled = !state.ble.connected || state.ble.busy;
+  ui.connectBtn.disabled = !state.ble.supported || state.ble.busy;
+  ui.connectBtn.textContent = state.ble.connected ? "Disconnect" : "Connect printer";
+  ui.connectBtn.className = state.ble.connected ? "secondary" : "primary";
   ui.sendBtn.disabled = !state.ble.connected || !hasBitmap || state.ble.busy;
 
   if (ui.sendProgress) {
@@ -533,6 +534,7 @@ async function connectBle() {
   state.ble.connected = true;
   state.ble.progressBytes = 0;
   state.ble.progressChunks = 0;
+  await sendResetPacket(0, 0);
   setSendStatus("Ready to send the prepared bitmap.");
   updateTransportUI();
 }
@@ -736,16 +738,15 @@ function renderApp(root) {
           </label>
           <label>
             Algorithm
-            <select id="algorithm-input">
-              <option value="atkinson" selected>Atkinson</option>
-              <option value="floyd-steinberg">Floyd-Steinberg</option>
-              <option value="ordered">Ordered Bayer</option>
-              <option value="threshold">Threshold</option>
-            </select>
-          </label>
-          <label>
-            Background
-            <input id="bg-color-input" type="color" value="#ffffff" />
+            <div class="algo-row">
+              <select id="algorithm-input">
+                <option value="atkinson" selected>Atkinson</option>
+                <option value="floyd-steinberg">Floyd-Steinberg</option>
+                <option value="ordered">Ordered Bayer</option>
+                <option value="threshold">Threshold</option>
+              </select>
+              <input id="bg-color-input" type="color" value="#ffffff" title="Background color" />
+            </div>
           </label>
         </div>
         <div class="sliders">
@@ -775,7 +776,6 @@ function renderApp(root) {
         <h2>Bluetooth transport</h2>
         <div class="button-row">
           <button id="connect-btn" class="primary" type="button">Connect printer</button>
-          <button id="disconnect-btn" class="secondary" type="button">Disconnect</button>
           <button id="send-btn" class="primary" type="button">Send to printer</button>
         </div>
         <p id="ble-status" class="status">Bluetooth not connected.</p>
@@ -811,7 +811,6 @@ function renderApp(root) {
   const outputCanvas = root.querySelector("#output-canvas");
   const copyBtn = root.querySelector("#copy-btn");
   const connectBtn = root.querySelector("#connect-btn");
-  const disconnectBtn = root.querySelector("#disconnect-btn");
   const sendBtn = root.querySelector("#send-btn");
   const bleStatus = root.querySelector("#ble-status");
   const sendStatus = root.querySelector("#send-status");
@@ -847,7 +846,6 @@ function renderApp(root) {
     !outputCanvas ||
     !copyBtn ||
     !connectBtn ||
-    !disconnectBtn ||
     !sendBtn ||
     !bleStatus ||
     !sendStatus ||
@@ -876,7 +874,6 @@ function renderApp(root) {
     outputCanvas,
     copyBtn,
     connectBtn,
-    disconnectBtn,
     sendBtn,
     bleStatus,
     sendStatus,
@@ -1093,18 +1090,17 @@ function renderApp(root) {
   ui.copyBtn.addEventListener("click", copyOutputToClipboard);
 
   ui.connectBtn.addEventListener("click", async () => {
-    setSendStatus("Connecting to printer...");
-
-    try {
-      await connectBle();
-    } catch (error) {
-      console.error(error);
-      setSendStatus(error instanceof Error ? error.message : String(error));
+    if (state.ble.connected) {
+      await disconnectBle();
+    } else {
+      setSendStatus("Connecting to printer...");
+      try {
+        await connectBle();
+      } catch (error) {
+        console.error(error);
+        setSendStatus(error instanceof Error ? error.message : String(error));
+      }
     }
-  });
-
-  ui.disconnectBtn.addEventListener("click", async () => {
-    await disconnectBle();
   });
 
   ui.sendBtn.addEventListener("click", async () => {

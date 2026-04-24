@@ -173,7 +173,7 @@ button:disabled {
 .settings-grid {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: 1fr 1fr;
 }
 
 .settings-grid label {
@@ -193,9 +193,21 @@ button:disabled {
   color: inherit;
 }
 
-.settings-grid input[type="color"] {
-  padding: 0.3rem 0.4rem;
-  height: 2.5rem;
+.algo-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.algo-row select {
+  flex: 1;
+}
+
+.algo-row input[type="color"] {
+  width: 2.75rem;
+  height: 100%;
+  padding: 0.3rem;
+  box-sizing: border-box;
+  flex-shrink: 0;
   cursor: pointer;
 }
 
