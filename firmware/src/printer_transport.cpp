@@ -14,12 +14,9 @@ void PrinterTransport::Begin(
   serial_.begin(baudRate, SERIAL_8N1, rxPin, txPin);
   delay(50);
   printer_.begin();
-  // Use a gentler print profile while bringing up raster mode so we can
-  // distinguish protocol problems from power/current-limit problems.
+  // Good defaults for normal paper.
   printer_.setHeatConfig(7, 120, 120);
-  printer_.setPrintDensity(14, 4);
-  // Our printer only behaved reliably when raster output was limited to a
-  // single dot row per DC2 * command.
+  printer_.setPrintDensity(12, 4);
   printer_.setMaxChunkHeight(1);
 }
 

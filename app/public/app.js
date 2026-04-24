@@ -1,4 +1,6 @@
 const MAX_WIDTH = 384;
+const DEFAULT_CANVAS_SIZE = 384;
+const MAX_HEIGHT_PERCENT = 100;
 const BLE_CONFIG = {
   serviceUuid: "9f4d0001-8f5d-4f4c-8d3d-4f747072696e",
   writeCharacteristicUuid: "9f4d0002-8f5d-4f4c-8d3d-4f747072696e",
@@ -45,15 +47,15 @@ const ACK_TIMEOUT_MS = 10000;
 const PRINTER_CONFIG_SIZE = 3;
 
 const PAPER_PRESETS = {
-  normal:   { label: "Normal paper",   heatDots: 7, heatTime: 120, heatInterval: 80 },
+  normal:   { label: "Normal paper",   heatDots: 8, heatTime: 125, heatInterval: 80 },
   sticker:  { label: "Sticker paper",  heatDots: 2, heatTime: 180, heatInterval: 80 },
 };
 
 const state = {
-  fileName: "",
+  fileName: "blank canvas",
   image: null,
-  sourceWidth: 0,
-  sourceHeight: 0,
+  sourceWidth: DEFAULT_CANVAS_SIZE,
+  sourceHeight: DEFAULT_CANVAS_SIZE,
   rotation: 0,
   textBlocks: [],
   nextTextBlockId: 1,
@@ -88,6 +90,14 @@ function clampDimension(value) {
   return Math.max(1, Math.min(MAX_WIDTH, Math.round(value)));
 }
 
+function clampHeightPercent(value) {
+  if (!Number.isFinite(value)) {
+    return MAX_HEIGHT_PERCENT;
+  }
+
+  return Math.max(1, Math.min(MAX_HEIGHT_PERCENT, Math.round(value)));
+}
+
 function calculateStrideBytes(width) {
   return Math.ceil(width / 8);
 }
@@ -119,11 +129,19 @@ function buildChunkPlan(envelope) {
   };
 }
 
-function calculateTargetSize(sourceWidth, sourceHeight, requestedWidth) {
-  const width = clampDimension(requestedWidth);
-  const height = Math.max(1, Math.round((sourceHeight * width) / sourceWidth));
+function calculateTargetSize(sourceWidth, sourceHeight, requestedWidth, requestedHeightPercent) {
+  const contentWidth = clampDimension(requestedWidth);
+  const contentHeight = Math.max(1, Math.round((sourceHeight * contentWidth) / sourceWidth));
+  const heightPercent = clampHeightPercent(requestedHeightPercent);
+  const canvasHeight = Math.max(1, Math.round((contentHeight * heightPercent) / 100));
 
-  return { width, height };
+  return {
+    contentWidth,
+    contentHeight,
+    canvasWidth: MAX_WIDTH,
+    canvasHeight,
+    heightPercent
+  };
 }
 
 function loadImageFromFile(file) {
@@ -145,7 +163,7 @@ function loadImageFromFile(file) {
   });
 }
 
-function drawSourceToCanvas(image, canvas, width, height, bgColor, rotation) {
+function drawSourceToCanvas(image, canvas, width, height, contentWidth, contentHeight, bgColor, rotation) {
   const context = canvas.getContext("2d");
 
   if (!context) {
@@ -158,39 +176,54 @@ function drawSourceToCanvas(image, canvas, width, height, bgColor, rotation) {
   context.fillStyle = bgColor;
   context.fillRect(0, 0, width, height);
 
+  if (!image) {
+    return;
+  }
+
   if (rotation) {
     context.save();
     context.translate(width / 2, height / 2);
     context.rotate((rotation * Math.PI) / 180);
     const swapped = rotation === 90 || rotation === 270;
-    const dw = swapped ? height : width;
-    const dh = swapped ? width : height;
+    const dw = swapped ? contentHeight : contentWidth;
+    const dh = swapped ? contentWidth : contentHeight;
     context.drawImage(image, -dw / 2, -dh / 2, dw, dh);
     context.restore();
   } else {
-    context.drawImage(image, 0, 0, width, height);
+    context.drawImage(image, (width - contentWidth) / 2, (height - contentHeight) / 2, contentWidth, contentHeight);
   }
 }
 
-function drawTextBlocks(canvas, textBlocks) {
+function drawTextBlocks(canvas, textBlocks, layout) {
   if (!textBlocks.length) return;
 
   const context = canvas.getContext("2d");
   if (!context) return;
 
+  const {
+    originX = 0,
+    originY = 0,
+    width = canvas.width,
+    height = canvas.height,
+    scale = 1
+  } = layout ?? {};
+
   for (const block of textBlocks) {
     if (!block.text) continue;
 
-    const fontSize = block.fontSize || 32;
+    const fontSize = Math.max(1, Math.round((block.fontSize || 32) * scale));
     context.font = `bold ${fontSize}px ${block.font || "Impact"}`;
     context.textBaseline = "top";
 
-    const x = ((block.xPct ?? 0) / 100) * canvas.width;
-    const y = ((block.yPct ?? 0) / 100) * canvas.height;
+    const x = originX + ((block.xPct ?? 0) / 100) * width;
+    const y = originY + ((block.yPct ?? 0) / 100) * height;
+    const outlineWidth = block.outlineWidth > 0
+      ? Math.max(1, (block.outlineWidth || 0) * scale)
+      : 0;
 
-    if (block.outlineWidth > 0) {
+    if (outlineWidth > 0) {
       context.strokeStyle = block.outlineColor || "#ffffff";
-      context.lineWidth = block.outlineWidth;
+      context.lineWidth = outlineWidth;
       context.lineJoin = "round";
       context.strokeText(block.text, x, y);
     }
@@ -804,12 +837,11 @@ function renderApp(root) {
           </label>
           <button id="paste-btn" type="button">Paste</button>
         </div>
-        <p id="status" class="status">Choose an image or paste one to begin.</p>
+        <p id="status" class="status">Ready with a blank 384 × 384 canvas. Add text or load an image.</p>
       </section>
 
       <section class="card settings-card">
         <div class="settings-row">
-          <input id="width-input" type="number" min="1" max="${MAX_WIDTH}" value="${MAX_WIDTH}" title="Output width" />
           <select id="algorithm-input">
             <option value="atkinson" selected>Atkinson</option>
             <option value="floyd-steinberg">Floyd-Steinberg</option>
@@ -819,6 +851,16 @@ function renderApp(root) {
           <input id="bg-color-input" type="color" value="#ffffff" title="Background color" />
           <button id="rotate-btn" type="button" title="Rotate 90\u00B0">🔄</button>
           <button id="add-text-btn" type="button" title="Add text">🔤</button>
+        </div>
+        <div class="size-controls">
+          <label class="slider-control" for="width-input">
+            <span>Width <output id="width-output">${MAX_WIDTH}px</output></span>
+            <input id="width-input" type="range" min="1" max="${MAX_WIDTH}" value="${MAX_WIDTH}" step="1" />
+          </label>
+          <label class="slider-control" for="height-input">
+            <span>Height <output id="height-output">100%</output></span>
+            <input id="height-input" type="range" min="1" max="${MAX_HEIGHT_PERCENT}" value="${MAX_HEIGHT_PERCENT}" step="1" />
+          </label>
         </div>
         <div id="text-blocks-container"></div>
         <div class="sliders">
@@ -875,6 +917,9 @@ function renderApp(root) {
   const pasteBtn = root.querySelector("#paste-btn");
   const rotateBtn = root.querySelector("#rotate-btn");
   const widthInput = root.querySelector("#width-input");
+  const widthOutput = root.querySelector("#width-output");
+  const heightInput = root.querySelector("#height-input");
+  const heightOutput = root.querySelector("#height-output");
   const algorithmInput = root.querySelector("#algorithm-input");
   const bgColorInput = root.querySelector("#bg-color-input");
   const brightnessInput = root.querySelector("#brightness-input");
@@ -910,6 +955,9 @@ function renderApp(root) {
     !pasteBtn ||
     !rotateBtn ||
     !widthInput ||
+    !widthOutput ||
+    !heightInput ||
+    !heightOutput ||
     !algorithmInput ||
     !bgColorInput ||
     !brightnessInput ||
@@ -937,6 +985,9 @@ function renderApp(root) {
     pasteBtn,
     rotateBtn,
     widthInput,
+    widthOutput,
+    heightInput,
+    heightOutput,
     algorithmInput,
     bgColorInput,
     brightnessInput,
@@ -961,6 +1012,13 @@ function renderApp(root) {
 
   function updateThresholdVisibility() {
     ui.thresholdRow.style.display = ui.algorithmInput.value === "threshold" ? "flex" : "none";
+  }
+
+  function updateSizeOutputs(contentWidth, heightPercent, canvasHeight) {
+    ui.widthOutput.value = `${contentWidth}px`;
+    ui.widthOutput.textContent = `${contentWidth}px`;
+    ui.heightOutput.value = `${heightPercent}%`;
+    ui.heightOutput.textContent = `${heightPercent}% · ${canvasHeight}px`;
   }
 
   function renderTextBlocksUI() {
@@ -1017,52 +1075,63 @@ function renderApp(root) {
   }
 
   function renderJob() {
-
     updateThresholdVisibility();
 
-    if (!state.image) {
-      state.render.envelope = null;
-      state.render.packedBitmap = null;
-      state.render.rowsPerChunk = 0;
-      state.render.chunkPayloadBytes = 0;
-      state.render.chunkCount = 0;
-      state.ble.progressBytes = 0;
-      state.ble.progressChunks = 0;
-      ui.summary.innerHTML = "";
-      updateTransportUI();
-      return;
-    }
-
     const requestedWidth = clampDimension(Number(ui.widthInput.value));
+    const requestedHeightPercent = clampHeightPercent(Number(ui.heightInput.value));
     const swapped = state.rotation === 90 || state.rotation === 270;
     const srcW = swapped ? state.sourceHeight : state.sourceWidth;
     const srcH = swapped ? state.sourceWidth : state.sourceHeight;
-    const { width, height } = calculateTargetSize(srcW, srcH, requestedWidth);
+    const { contentWidth, contentHeight, canvasWidth, canvasHeight, heightPercent } = calculateTargetSize(
+      srcW,
+      srcH,
+      requestedWidth,
+      requestedHeightPercent
+    );
 
-    ui.widthInput.value = String(width);
+    ui.widthInput.value = String(contentWidth);
+    ui.heightInput.value = String(heightPercent);
+    updateSizeOutputs(contentWidth, heightPercent, canvasHeight);
 
     const bgColor = ui.bgColorInput.value;
-    drawSourceToCanvas(state.image, ui.sourceCanvas, width, height, bgColor, state.rotation);
-    drawTextBlocks(ui.sourceCanvas, state.textBlocks);
+    const contentOriginX = (canvasWidth - contentWidth) / 2;
+    const contentOriginY = (canvasHeight - contentHeight) / 2;
+    drawSourceToCanvas(
+      state.image,
+      ui.sourceCanvas,
+      canvasWidth,
+      canvasHeight,
+      contentWidth,
+      contentHeight,
+      bgColor,
+      state.rotation
+    );
+    drawTextBlocks(ui.sourceCanvas, state.textBlocks, {
+      originX: contentOriginX,
+      originY: contentOriginY,
+      width: contentWidth,
+      height: contentHeight,
+      scale: contentWidth / DEFAULT_CANVAS_SIZE
+    });
     const sourceContext = ui.sourceCanvas.getContext("2d", { willReadFrequently: true });
 
     if (!sourceContext) {
       throw new Error("Missing source canvas context");
     }
 
-    const imageData = sourceContext.getImageData(0, 0, width, height);
+    const imageData = sourceContext.getImageData(0, 0, canvasWidth, canvasHeight);
     const rawGrayscale = toGrayscale(imageData);
     const brightness = Number(ui.brightnessInput.value);
     const contrast = Number(ui.contrastInput.value);
     const grayscale = applyBrightnessContrast(rawGrayscale, brightness, contrast);
     const algorithm = ui.algorithmInput.value;
     const threshold = Number(ui.thresholdInput.value);
-    const dithered = ditherImage(grayscale, width, height, algorithm, threshold);
+    const dithered = ditherImage(grayscale, canvasWidth, canvasHeight, algorithm, threshold);
 
-    renderBinaryPreview(ui.outputCanvas, width, height, dithered);
+    renderBinaryPreview(ui.outputCanvas, canvasWidth, canvasHeight, dithered);
 
-    const packedBitmap = packMonochrome(dithered, width, height);
-    const envelope = buildEnvelope(width, height);
+    const packedBitmap = packMonochrome(dithered, canvasWidth, canvasHeight);
+    const envelope = buildEnvelope(canvasWidth, canvasHeight);
     const chunkPlan = buildChunkPlan(envelope);
 
     state.render.envelope = envelope;
@@ -1074,10 +1143,13 @@ function renderApp(root) {
     state.ble.progressBytes = 0;
     state.ble.progressChunks = 0;
 
-    setImageStatus(`Ready — ${state.fileName}, ${width} × ${height} px, ${algorithm}.`);
+    setImageStatus(
+      `Ready — ${state.fileName}, content ${contentWidth} × ${contentHeight} px on a ${canvasWidth} × ${canvasHeight} canvas, ${algorithm}.`
+    );
     ui.summary.innerHTML = `
       <div><dt>Source</dt><dd>${state.sourceWidth} × ${state.sourceHeight}</dd></div>
-      <div><dt>Output</dt><dd>${width} × ${height}</dd></div>
+      <div><dt>Content</dt><dd>${contentWidth} × ${contentHeight}</dd></div>
+      <div><dt>Canvas</dt><dd>${canvasWidth} × ${canvasHeight}</dd></div>
       <div><dt>Stride</dt><dd>${envelope.strideBytes} B/row</dd></div>
       <div><dt>Payload</dt><dd>${packedBitmap.length} B</dd></div>
       <div><dt>Rows / chunk</dt><dd>${chunkPlan.rowsPerChunk}</dd></div>
@@ -1093,6 +1165,7 @@ function renderApp(root) {
     state.sourceWidth = image.naturalWidth || image.width;
     state.sourceHeight = image.naturalHeight || image.height;
     state.rotation = 0;
+    ui.heightInput.value = String(MAX_HEIGHT_PERCENT);
     state.textBlocks = [];
     state.nextTextBlockId = 1;
     renderTextBlocksUI();
@@ -1112,6 +1185,7 @@ function renderApp(root) {
       yPct: 0,
     });
     renderTextBlocksUI();
+    renderJob();
   });
 
   rotateBtn.addEventListener("click", () => {
@@ -1214,7 +1288,7 @@ function renderApp(root) {
   // ClipboardItem the call falls outside the synchronous user-gesture frame
   // and Safari refuses to write to the clipboard.
   const copyOutputToClipboard = async () => {
-    if (!state.image) {
+    if (!state.render.envelope) {
       return;
     }
 
@@ -1260,6 +1334,7 @@ function renderApp(root) {
   });
 
   ui.widthInput.addEventListener("input", renderJob);
+  ui.heightInput.addEventListener("input", renderJob);
   ui.algorithmInput.addEventListener("input", renderJob);
   ui.bgColorInput.addEventListener("input", renderJob);
   ui.brightnessInput.addEventListener("input", renderJob);
@@ -1267,7 +1342,8 @@ function renderApp(root) {
   ui.thresholdInput.addEventListener("input", renderJob);
 
   updateThresholdVisibility();
-  updateTransportUI();
+  renderTextBlocksUI();
+  renderJob();
 }
 
 const root = document.querySelector("#app");
