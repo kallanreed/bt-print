@@ -471,13 +471,13 @@ void Adafruit_Thermal::setHeatConfig(uint8_t dots, uint8_t time,
 
 // Print density description from manual:
 // DC2 # n Set printing density
-// D4..D0 of n is used to set the printing density.  Density is
+// D4..D0 of n is used to set the printing density. Density is
 // 50% + 5% * n(D4-D0) printing density.
-// D7..D5 of n is used to set the printing break time.  Break time
+// D7..D5 of n is used to set the printing break time. Break time
 // is n(D7-D5)*250us.
 // (Unsure of the default value for either -- not documented)
 void Adafruit_Thermal::setPrintDensity(uint8_t density, uint8_t breakTime) {
-  writeBytes(ASCII_DC2, '#', (density << 5) | breakTime);
+  writeBytes(ASCII_DC2, '#', (breakTime << 5) | density);
 }
 
 // Underlines of different weights can be produced:

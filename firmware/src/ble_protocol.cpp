@@ -145,6 +145,11 @@ bool ParsePrinterConfig(
   config.heatDots = data[0];
   config.heatTime = data[1];
   config.heatInterval = data[2];
+  config.density = data[3];
+  config.breakTime = data[4];
+  config.printSpeed = ReadUint16Le(data + 5);
+  config.feedSpeed = ReadUint16Le(data + 7);
+  config.preFeedRows = length > 9 ? data[9] : 0;
   return true;
 }
 

@@ -291,7 +291,7 @@ void test_full_transfer_then_reset() {
   TEST_ASSERT_EQUAL(0, session.bytesReceived());
 }
 
-int main() {
+void run_tests() {
   UNITY_BEGIN();
 
   RUN_TEST(test_reset_returns_to_idle);
@@ -317,5 +317,18 @@ int main() {
   RUN_TEST(test_commit_not_receiving);
   RUN_TEST(test_full_transfer_then_reset);
 
-  return UNITY_END();
+  UNITY_END();
 }
+
+#ifdef ARDUINO
+void setup() {
+  run_tests();
+}
+
+void loop() {}
+#else
+int main() {
+  run_tests();
+  return 0;
+}
+#endif

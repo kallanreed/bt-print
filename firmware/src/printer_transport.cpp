@@ -1,11 +1,80 @@
 #include "printer_transport.h"
 
-#include <string.h>
-
 namespace bt_print {
 
+namespace {
+
+constexpr uint16_t kPrinterWidthDots = 384;
+constexpr uint8_t kDotsPerHeatGroup = 8;
+constexpr uint32_t kHeatUnitUs = 10;
+constexpr uint32_t kBreakUnitUs = 250;
+constexpr uint32_t kReferenceFeedTimeUs = 2100;
+constexpr int64_t kDensityPassInterceptNumerator = 98493;
+constexpr int64_t kDensityPassSlopeNumerator = -3898;
+constexpr int64_t kDensityPassDenominator = 10200;
+
+uint32_t ClampEstimateUs(const uint32_t value) {
+  if (value == 0) {
+    return 1;
+  }
+
+  return value;
+}
+
+uint32_t HeatGroupWidthDots(const uint8_t heatDots) {
+  return static_cast<uint32_t>(heatDots + 1U) * kDotsPerHeatGroup;
+}
+
+uint32_t RowSectionCount(const PrinterConfig& config) {
+  const uint32_t sectionWidthDots = HeatGroupWidthDots(config.heatDots);
+  return (kPrinterWidthDots + sectionWidthDots - 1U) / sectionWidthDots;
+}
+
+uint32_t SectionCycleUs(const PrinterConfig& config) {
+  return static_cast<uint32_t>(config.heatTime + config.heatInterval) * kHeatUnitUs;
+}
+
+int64_t EffectiveDensityPassNumerator(const uint8_t density) {
+  const int64_t numerator =
+      kDensityPassInterceptNumerator + kDensityPassSlopeNumerator * density;
+  if (numerator < kDensityPassDenominator) {
+    return kDensityPassDenominator;
+  }
+
+  return numerator;
+}
+
+uint32_t EstimatePrintTimeUs(const PrinterConfig& config) {
+  uint64_t estimate = static_cast<uint64_t>(RowSectionCount(config)) *
+                      SectionCycleUs(config) *
+                      static_cast<uint64_t>(
+                          EffectiveDensityPassNumerator(config.density));
+  estimate /= static_cast<uint64_t>(kDensityPassDenominator);
+  estimate += static_cast<uint32_t>(config.breakTime) * kBreakUnitUs;
+  return ClampEstimateUs(static_cast<uint32_t>(estimate));
+}
+
+uint32_t EstimateFeedTimeUs() {
+  return kReferenceFeedTimeUs;
+}
+
+PrinterConfig DefaultPrinterConfig() {
+  return PrinterConfig{
+      7,
+      120,
+      120,
+      12,
+      4,
+      0,
+      0,
+      0,
+  };
+}
+
+}  // namespace
+
 PrinterTransport::PrinterTransport(HardwareSerial& serial)
-    : serial_(serial), printer_(&serial) {}
+    : currentConfig_(DefaultPrinterConfig()), serial_(serial), printer_(&serial) {}
 
 void PrinterTransport::Begin(
     const int8_t txPin,
@@ -14,31 +83,45 @@ void PrinterTransport::Begin(
   serial_.begin(baudRate, SERIAL_8N1, rxPin, txPin);
   delay(50);
   printer_.begin();
-  // Good defaults for normal paper.
-  printer_.setHeatConfig(7, 120, 120);
-  printer_.setPrintDensity(12, 4);
+  Configure(currentConfig_);
   printer_.setMaxChunkHeight(1);
 }
 
 void PrinterTransport::Configure(const PrinterConfig& config) {
+  const uint32_t effectivePrintSpeed =
+      config.printSpeed != 0 ? config.printSpeed : EstimatePrintTimeUs(config);
+  const uint32_t effectiveFeedSpeed =
+      config.feedSpeed != 0 ? config.feedSpeed : EstimateFeedTimeUs();
+
   Serial.printf(
-      "printer: configure dots=%u time=%u interval=%u\n",
+      "printer: configure dots=%u time=%u interval=%u density=%u break=%u print=%u->%lu feed=%u->%lu prefeedrows=%u\n",
       static_cast<unsigned>(config.heatDots),
       static_cast<unsigned>(config.heatTime),
-      static_cast<unsigned>(config.heatInterval));
+      static_cast<unsigned>(config.heatInterval),
+      static_cast<unsigned>(config.density),
+      static_cast<unsigned>(config.breakTime),
+      static_cast<unsigned>(config.printSpeed),
+      static_cast<unsigned long>(effectivePrintSpeed),
+      static_cast<unsigned>(config.feedSpeed),
+      static_cast<unsigned long>(effectiveFeedSpeed),
+      static_cast<unsigned>(config.preFeedRows));
+  currentConfig_ = config;
   printer_.setHeatConfig(config.heatDots, config.heatTime, config.heatInterval);
+  printer_.setPrintDensity(config.density, config.breakTime);
+  printer_.setTimes(effectivePrintSpeed, effectiveFeedSpeed);
 }
 
 void PrinterTransport::Poll() {}
 
 void PrinterTransport::Feed(const uint8_t lines) {
-  Serial.printf("printer-debug: Feed lines=%u\n", static_cast<unsigned>(lines));
   printer_.feed(lines);
+  printer_.timeoutWait();
 }
 
 void PrinterTransport::PrintImage(
     const uint8_t* bitmap,
-    const ImageEnvelope& envelope) {
+    const ImageEnvelope& envelope,
+    const bool preFeedBeforeImage) {
   if (bitmap == nullptr || envelope.width == 0 || envelope.height == 0 ||
       envelope.strideBytes == 0 ||
       envelope.strideBytes > UINT8_MAX) {
@@ -46,14 +129,10 @@ void PrinterTransport::PrintImage(
     return;
   }
 
-  Serial.printf(
-      "printer-debug: PrintImage width=%u height=%u stride=%u payload=%lu\n",
-      static_cast<unsigned>(envelope.width),
-      static_cast<unsigned>(envelope.height),
-      static_cast<unsigned>(envelope.strideBytes),
-      static_cast<unsigned long>(envelope.payloadLength));
+  if (preFeedBeforeImage && currentConfig_.preFeedRows != 0) {
+    printer_.feedRows(currentConfig_.preFeedRows);
+  }
   printer_.printBitmap(envelope.width, envelope.height, bitmap, false);
-  Serial.println("printer-debug: PrintImage done");
 }
 
 void PrinterTransport::PrintLine(const char* text) {
@@ -61,44 +140,7 @@ void PrinterTransport::PrintLine(const char* text) {
     return;
   }
 
-  Serial.printf("printer-debug: PrintLine text=\"%s\"\n", text);
   printer_.println(text);
-}
-
-void PrinterTransport::PrintRasterProbe() {
-  constexpr uint16_t kWidth = 384;
-  constexpr uint16_t kHeight = 10;
-  constexpr uint16_t kStride = kWidth / 8;
-  constexpr uint8_t kPatterns[] = {
-      0x80, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF};
-
-  uint8_t patternRows[kStride * kHeight];
-
-  const ImageEnvelope envelope = {
-      kWidth, kHeight, kStride, static_cast<uint32_t>(kStride * kHeight)};
-
-  for (const uint8_t pattern : kPatterns) {
-    memset(patternRows, pattern, sizeof(patternRows));
-    Serial.printf("printer: raster probe 0x%02X x10\n", static_cast<unsigned>(pattern));
-    PrintImage(patternRows, envelope);
-    printer_.feedRows(8);
-    delay(250);
-  }
-}
-
-void PrinterTransport::PrintTestPattern() {
-  constexpr uint16_t kWidth = 384;
-  constexpr uint16_t kHeight = 5;
-  constexpr uint16_t kStride = kWidth / 8;
-
-  uint8_t bitmap[kStride * kHeight];
-  memset(bitmap, 0xFF, sizeof(bitmap));
-
-  const ImageEnvelope envelope = {
-      kWidth, kHeight, kStride, static_cast<uint32_t>(kStride * kHeight)};
-
-  Serial.println("printer: sending test pattern");
-  PrintImage(bitmap, envelope);
 }
 
 }  // namespace bt_print

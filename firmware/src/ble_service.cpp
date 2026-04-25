@@ -165,7 +165,8 @@ void BleService::HandleWrite(const uint8_t* data, const size_t length) {
                   request.payloadLength / session_->envelope().strideBytes),
               session_->envelope().strideBytes,
               request.payloadLength,
-          });
+          },
+          request.sequence == 1);
       NotifyAck(request);
       return;
 

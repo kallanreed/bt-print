@@ -6,6 +6,8 @@
 #include "printer_transport.h"
 #include "transfer_session.h"
 
+#ifndef PIO_UNIT_TESTING
+
 namespace {
 
 bt_print::BleService bleService;
@@ -38,3 +40,5 @@ void loop() {
   bleService.Poll();
   delay(10);
 }
+
+#endif

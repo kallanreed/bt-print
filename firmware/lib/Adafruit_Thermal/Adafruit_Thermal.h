@@ -266,8 +266,8 @@ public:
     setHeatConfig(uint8_t dots=11, uint8_t time=120, uint8_t interval=40),
     /*!
      * @brief Sets print density
-     * @param density printing density
-     * @param breakTime printing break time
+     * @param density Packed into bits D4..D0
+     * @param breakTime Packed into bits D7..D5
      */
     setPrintDensity(uint8_t density=10, uint8_t breakTime=2),
     /*!

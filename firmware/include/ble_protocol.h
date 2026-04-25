@@ -58,12 +58,60 @@ struct ErrorPayload {
 };
 
 struct PrinterConfig {
+  // Units: printer "max heating dots" setting; Adafruit_Thermal documents this
+  // as 8-dot increments.
+  // Default: printer default is documented as 7.
+  // Purpose: controls how many dots can be heated at once; higher values print
+  // faster but increase peak current draw.
   uint8_t heatDots;
+
+  // Range: 3-255 printer-command value.
+  // Units: 10 microseconds per increment.
+  // Default: printer default is documented as 80.
+  // Purpose: controls how long the print head applies heat for each fired dot.
   uint8_t heatTime;
+
+  // Range: 0-255 printer-command value.
+  // Units: 10 microseconds per increment.
+  // Default: printer default is documented as 2.
+  // Purpose: controls the cooling delay between heated dot groups.
   uint8_t heatInterval;
+
+  // Range: 0-31 printer-manual value.
+  // Units: density step, where output density is approximately 50% + 5% * value.
+  // Default: not documented by the printer manual / library comments.
+  // Purpose: adjusts overall print darkness / density.
+  uint8_t density;
+
+  // Range: 0-7 printer-manual value.
+  // Units: 250 microseconds per increment.
+  // Default: not documented by the printer manual / library comments.
+  // Purpose: inserts extra pause between print bursts to trade speed for
+  // stability and print quality.
+  uint8_t breakTime;
+
+  // Units: microseconds.
+  // Default: 0 means auto-estimate from the other print profile inputs.
+  // Purpose: host-side timing estimate passed to Adafruit_Thermal::setTimes()
+  // for printed-dot rows. It affects pacing / completion timing, not printer
+  // hardware configuration.
+  uint16_t printSpeed;
+
+  // Units: microseconds.
+  // Default: 0 means auto-estimate from the other print profile inputs.
+  // Purpose: host-side timing estimate passed to Adafruit_Thermal::setTimes()
+  // for explicit feed rows / lines. It affects pacing / completion timing, not
+  // printer hardware configuration.
+  uint16_t feedSpeed;
+
+  // Units: printer dot rows.
+  // Default: 0.
+  // Purpose: starts the paper motor before image heating begins to help spread
+  // the current spike.
+  uint8_t preFeedRows;
 };
 
-constexpr size_t kPrinterConfigSize = 3;
+constexpr size_t kPrinterConfigSize = 10;
 constexpr size_t kPacketHeaderSize = 9;
 constexpr size_t kImageEnvelopeSize = 10;
 constexpr size_t kAckPayloadSize = 8;

@@ -44,11 +44,31 @@ const ERROR_PAYLOAD_SIZE = 8;
 const MAX_ATT_PAYLOAD = 244;
 const MAX_DATA_PAYLOAD = MAX_ATT_PAYLOAD - PACKET_HEADER_SIZE;
 const ACK_TIMEOUT_MS = 10000;
-const PRINTER_CONFIG_SIZE = 3;
+const PRINTER_CONFIG_SIZE = 10;
 
 const PAPER_PRESETS = {
-  normal:   { label: "Normal paper",   heatDots: 8, heatTime: 125, heatInterval: 80 },
-  sticker:  { label: "Sticker paper",  heatDots: 2, heatTime: 180, heatInterval: 80 },
+  normal: {
+    label: "Normal paper",
+    heatDots: 7,
+    heatTime: 110,
+    heatInterval: 60,
+    density: 12,
+    breakTime: 4,
+    printSpeed: 0,
+    feedSpeed: 0,
+    preFeedRows: 0
+  },
+  sticker: {
+    label: "Sticker paper",
+    heatDots: 2,
+    heatTime: 130,
+    heatInterval: 80,
+    density: 16,
+    breakTime: 4,
+    printSpeed: 0,
+    feedSpeed: 0,
+    preFeedRows: 10
+  },
 };
 
 const state = {
@@ -686,9 +706,15 @@ async function sendPrinterConfig(preset) {
     return;
   }
 
-  const payload = new Uint8Array([
-    config.heatDots, config.heatTime, config.heatInterval
-  ]);
+  const payload = new Uint8Array(PRINTER_CONFIG_SIZE);
+  payload[0] = config.heatDots;
+  payload[1] = config.heatTime;
+  payload[2] = config.heatInterval;
+  payload[3] = config.density;
+  payload[4] = config.breakTime;
+  writeUint16Le(payload, 5, config.printSpeed);
+  writeUint16Le(payload, 7, config.feedSpeed);
+  payload[9] = config.preFeedRows;
 
   await sendPacketAwaitAck(PACKET_TYPE.CONFIGURE, 0, 0, payload);
 }

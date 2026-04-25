@@ -15,13 +15,16 @@ class PrinterTransport {
   void Poll();
 
   void Configure(const PrinterConfig& config);
-  void PrintImage(const uint8_t* bitmap, const ImageEnvelope& envelope);
+  void PrintImage(
+      const uint8_t* bitmap,
+      const ImageEnvelope& envelope,
+      bool preFeedBeforeImage = false);
   void PrintLine(const char* text);
-  void PrintRasterProbe();
-  void PrintTestPattern();
   void Feed(uint8_t lines = 3);
 
  private:
+  PrinterConfig currentConfig_{};
+
   HardwareSerial& serial_;
   Adafruit_Thermal printer_;
 };

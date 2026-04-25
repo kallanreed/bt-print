@@ -147,21 +147,26 @@ void test_is_control_packet() {
 // --- ParsePrinterConfig ---
 
 void test_parse_config_valid() {
-  const uint8_t data[] = {7, 120, 120};
+  const uint8_t data[] = {7, 120, 120, 12, 4, 0x30, 0x75, 0x34, 0x08, 1};
   PrinterConfig config{};
   TEST_ASSERT_TRUE(ParsePrinterConfig(data, sizeof(data), config));
   TEST_ASSERT_EQUAL_UINT8(7, config.heatDots);
   TEST_ASSERT_EQUAL_UINT8(120, config.heatTime);
   TEST_ASSERT_EQUAL_UINT8(120, config.heatInterval);
+  TEST_ASSERT_EQUAL_UINT8(12, config.density);
+  TEST_ASSERT_EQUAL_UINT8(4, config.breakTime);
+  TEST_ASSERT_EQUAL_UINT16(30000, config.printSpeed);
+  TEST_ASSERT_EQUAL_UINT16(2100, config.feedSpeed);
+  TEST_ASSERT_EQUAL_UINT8(1, config.preFeedRows);
 }
 
 void test_parse_config_null() {
   PrinterConfig config{};
-  TEST_ASSERT_FALSE(ParsePrinterConfig(nullptr, 5, config));
+  TEST_ASSERT_FALSE(ParsePrinterConfig(nullptr, kPrinterConfigSize, config));
 }
 
 void test_parse_config_too_short() {
-  const uint8_t data[2] = {};
+  const uint8_t data[kPrinterConfigSize - 1] = {};
   PrinterConfig config{};
   TEST_ASSERT_FALSE(ParsePrinterConfig(data, sizeof(data), config));
 }
@@ -185,7 +190,7 @@ void test_protocol_error_name() {
       "unknown", ProtocolErrorName(static_cast<ProtocolError>(0xFF)));
 }
 
-int main() {
+void run_tests() {
   UNITY_BEGIN();
 
   RUN_TEST(test_parse_header_valid);
@@ -208,5 +213,18 @@ int main() {
   RUN_TEST(test_packet_type_name);
   RUN_TEST(test_protocol_error_name);
 
-  return UNITY_END();
+  UNITY_END();
 }
+
+#ifdef ARDUINO
+void setup() {
+  run_tests();
+}
+
+void loop() {}
+#else
+int main() {
+  run_tests();
+  return 0;
+}
+#endif
