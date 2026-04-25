@@ -213,6 +213,11 @@ button:disabled {
   line-height: 1;
 }
 
+.settings-row button.active {
+  background: rgba(88, 141, 255, 0.28);
+  border-color: rgba(88, 141, 255, 0.45);
+}
+
 .size-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

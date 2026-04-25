@@ -477,7 +477,8 @@ void Adafruit_Thermal::setHeatConfig(uint8_t dots, uint8_t time,
 // is n(D7-D5)*250us.
 // (Unsure of the default value for either -- not documented)
 void Adafruit_Thermal::setPrintDensity(uint8_t density, uint8_t breakTime) {
-  writeBytes(ASCII_DC2, '#', (breakTime << 5) | density);
+  uint8_t n = ((breakTime & 0x07) << 5) | (density & 0x1F);
+  writeBytes(ASCII_DC2, '#', n);
 }
 
 // Underlines of different weights can be produced:

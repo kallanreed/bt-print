@@ -50,10 +50,10 @@ const PAPER_PRESETS = {
   normal: {
     label: "Normal paper",
     heatDots: 7,
-    heatTime: 110,
-    heatInterval: 60,
-    density: 12,
-    breakTime: 4,
+    heatTime: 100,
+    heatInterval: 2,
+    density: 10,
+    breakTime: 0,
     printSpeed: 0,
     feedSpeed: 0,
     preFeedRows: 0
@@ -61,13 +61,13 @@ const PAPER_PRESETS = {
   sticker: {
     label: "Sticker paper",
     heatDots: 2,
-    heatTime: 130,
-    heatInterval: 80,
-    density: 16,
-    breakTime: 4,
+    heatTime: 140,
+    heatInterval: 10,
+    density: 0,
+    breakTime: 0,
     printSpeed: 0,
     feedSpeed: 0,
-    preFeedRows: 10
+    preFeedRows: 2
   },
 };
 
@@ -77,6 +77,7 @@ const state = {
   sourceWidth: DEFAULT_CANVAS_SIZE,
   sourceHeight: DEFAULT_CANVAS_SIZE,
   rotation: 0,
+  invert: false,
   textBlocks: [],
   nextTextBlockId: 1,
   render: {
@@ -267,6 +268,16 @@ function toGrayscale(imageData) {
   }
 
   return grayscale;
+}
+
+function invertGrayscale(grayscale) {
+  const inverted = new Float32Array(grayscale.length);
+
+  for (let index = 0; index < grayscale.length; index += 1) {
+    inverted[index] = 255 - grayscale[index];
+  }
+
+  return inverted;
 }
 
 function applyBrightnessContrast(grayscale, brightness, contrast) {
@@ -876,6 +887,7 @@ function renderApp(root) {
           </select>
           <input id="bg-color-input" type="color" value="#ffffff" title="Background color" />
           <button id="rotate-btn" type="button" title="Rotate 90\u00B0">🔄</button>
+          <button id="invert-btn" type="button" title="Invert image">🔀</button>
           <button id="add-text-btn" type="button" title="Add text">🔤</button>
         </div>
         <div class="size-controls">
@@ -942,6 +954,7 @@ function renderApp(root) {
   const fileInput = root.querySelector("#file-input");
   const pasteBtn = root.querySelector("#paste-btn");
   const rotateBtn = root.querySelector("#rotate-btn");
+  const invertBtn = root.querySelector("#invert-btn");
   const widthInput = root.querySelector("#width-input");
   const widthOutput = root.querySelector("#width-output");
   const heightInput = root.querySelector("#height-input");
@@ -980,6 +993,7 @@ function renderApp(root) {
     !fileInput ||
     !pasteBtn ||
     !rotateBtn ||
+    !invertBtn ||
     !widthInput ||
     !widthOutput ||
     !heightInput ||
@@ -1010,6 +1024,7 @@ function renderApp(root) {
     fileInput,
     pasteBtn,
     rotateBtn,
+    invertBtn,
     widthInput,
     widthOutput,
     heightInput,
@@ -1038,6 +1053,11 @@ function renderApp(root) {
 
   function updateThresholdVisibility() {
     ui.thresholdRow.style.display = ui.algorithmInput.value === "threshold" ? "flex" : "none";
+  }
+
+  function updateInvertButton() {
+    ui.invertBtn.classList.toggle("active", state.invert);
+    ui.invertBtn.setAttribute("aria-pressed", state.invert ? "true" : "false");
   }
 
   function updateSizeOutputs(contentWidth, heightPercent, canvasHeight) {
@@ -1102,6 +1122,7 @@ function renderApp(root) {
 
   function renderJob() {
     updateThresholdVisibility();
+    updateInvertButton();
 
     const requestedWidth = clampDimension(Number(ui.widthInput.value));
     const requestedHeightPercent = clampHeightPercent(Number(ui.heightInput.value));
@@ -1149,7 +1170,8 @@ function renderApp(root) {
     const rawGrayscale = toGrayscale(imageData);
     const brightness = Number(ui.brightnessInput.value);
     const contrast = Number(ui.contrastInput.value);
-    const grayscale = applyBrightnessContrast(rawGrayscale, brightness, contrast);
+    const adjustedGrayscale = applyBrightnessContrast(rawGrayscale, brightness, contrast);
+    const grayscale = state.invert ? invertGrayscale(adjustedGrayscale) : adjustedGrayscale;
     const algorithm = ui.algorithmInput.value;
     const threshold = Number(ui.thresholdInput.value);
     const dithered = ditherImage(grayscale, canvasWidth, canvasHeight, algorithm, threshold);
@@ -1176,6 +1198,7 @@ function renderApp(root) {
       <div><dt>Source</dt><dd>${state.sourceWidth} × ${state.sourceHeight}</dd></div>
       <div><dt>Content</dt><dd>${contentWidth} × ${contentHeight}</dd></div>
       <div><dt>Canvas</dt><dd>${canvasWidth} × ${canvasHeight}</dd></div>
+      <div><dt>Invert</dt><dd>${state.invert ? "On" : "Off"}</dd></div>
       <div><dt>Stride</dt><dd>${envelope.strideBytes} B/row</dd></div>
       <div><dt>Payload</dt><dd>${packedBitmap.length} B</dd></div>
       <div><dt>Rows / chunk</dt><dd>${chunkPlan.rowsPerChunk}</dd></div>
@@ -1216,6 +1239,11 @@ function renderApp(root) {
 
   rotateBtn.addEventListener("click", () => {
     state.rotation = (state.rotation + 90) % 360;
+    renderJob();
+  });
+
+  invertBtn.addEventListener("click", () => {
+    state.invert = !state.invert;
     renderJob();
   });
 

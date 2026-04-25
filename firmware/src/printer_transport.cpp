@@ -7,11 +7,8 @@ namespace {
 constexpr uint16_t kPrinterWidthDots = 384;
 constexpr uint8_t kDotsPerHeatGroup = 8;
 constexpr uint32_t kHeatUnitUs = 10;
-constexpr uint32_t kBreakUnitUs = 250;
 constexpr uint32_t kReferenceFeedTimeUs = 2100;
-constexpr int64_t kDensityPassInterceptNumerator = 98493;
-constexpr int64_t kDensityPassSlopeNumerator = -3898;
-constexpr int64_t kDensityPassDenominator = 10200;
+constexpr uint32_t kPrintEstimateOffsetUs = 18000;
 
 uint32_t ClampEstimateUs(const uint32_t value) {
   if (value == 0) {
@@ -34,23 +31,12 @@ uint32_t SectionCycleUs(const PrinterConfig& config) {
   return static_cast<uint32_t>(config.heatTime + config.heatInterval) * kHeatUnitUs;
 }
 
-int64_t EffectiveDensityPassNumerator(const uint8_t density) {
-  const int64_t numerator =
-      kDensityPassInterceptNumerator + kDensityPassSlopeNumerator * density;
-  if (numerator < kDensityPassDenominator) {
-    return kDensityPassDenominator;
-  }
-
-  return numerator;
+uint32_t RowWorkUs(const PrinterConfig& config) {
+  return RowSectionCount(config) * SectionCycleUs(config);
 }
 
 uint32_t EstimatePrintTimeUs(const PrinterConfig& config) {
-  uint64_t estimate = static_cast<uint64_t>(RowSectionCount(config)) *
-                      SectionCycleUs(config) *
-                      static_cast<uint64_t>(
-                          EffectiveDensityPassNumerator(config.density));
-  estimate /= static_cast<uint64_t>(kDensityPassDenominator);
-  estimate += static_cast<uint32_t>(config.breakTime) * kBreakUnitUs;
+  uint64_t estimate = static_cast<uint64_t>(RowWorkUs(config)) + kPrintEstimateOffsetUs;
   return ClampEstimateUs(static_cast<uint32_t>(estimate));
 }
 
