@@ -562,6 +562,10 @@ function updateTransportUI() {
   ui.connectBtn.className = state.ble.connected ? "secondary" : "primary";
   ui.sendBtn.disabled = !state.ble.supported || !hasBitmap || state.ble.busy;
 
+  if (ui.feedBtn) {
+    ui.feedBtn.disabled = !state.ble.supported || state.ble.busy;
+  }
+
   if (ui.sendProgress) {
     const totalBytes = state.render.envelope?.payloadLength ?? 0;
     ui.sendProgress.value = totalBytes > 0 ? Math.round((state.ble.progressBytes / totalBytes) * 100) : 0;
@@ -797,6 +801,48 @@ function createTransferId() {
   return (Date.now() & 0xffffffff) >>> 0;
 }
 
+async function sendFeedRow() {
+  if (!state.ble.connected) {
+    setSendStatus("Connecting to printer...");
+    try {
+      await connectBle();
+    } catch {
+      updateTransportUI();
+      return;
+    }
+  }
+
+  const width = MAX_WIDTH;
+  const envelope = buildEnvelope(width, 1);
+  const bitmap = new Uint8Array(envelope.strideBytes); // all zeros = all white
+  const transferId = createTransferId();
+
+  state.ble.busy = true;
+  updateTransportUI();
+  setSendStatus("Feeding paper...");
+
+  try {
+    await sendPacketAwaitAck(
+      PACKET_TYPE.TRANSFER_START,
+      transferId,
+      0,
+      encodeEnvelopePayload(envelope)
+    );
+
+    await sendPacketAwaitAck(PACKET_TYPE.DATA_CHUNK, transferId, 1, bitmap);
+    await sendPacketAwaitAck(PACKET_TYPE.TRANSFER_COMMIT, transferId, 2);
+    setSendStatus("Feed complete.");
+  } catch (error) {
+    await sendResetPacket(transferId, 0);
+    const message = error instanceof Error ? error.message : String(error);
+    setSendStatus(`Feed failed: ${message}`);
+    throw error;
+  } finally {
+    state.ble.busy = false;
+    updateTransportUI();
+  }
+}
+
 async function sendPreparedBitmap() {
   if (!state.ble.connected) {
     setSendStatus("Connecting to printer...");
@@ -937,6 +983,7 @@ function renderApp(root) {
             <option value="normal" selected>Normal paper</option>
             <option value="sticker">Sticker paper</option>
           </select>
+          <button id="feed-btn" type="button" title="Feed paper">⏏</button>
         </div>
       </section>
 
@@ -975,6 +1022,7 @@ function renderApp(root) {
   const sendProgress = root.querySelector("#send-progress");
   const paperTypeInput = root.querySelector("#paper-type-input");
   const chunkMeta = root.querySelector("#chunk-meta");
+  const feedBtn = root.querySelector("#feed-btn");
   const addTextBtn = root.querySelector("#add-text-btn");
   const textBlocksContainer = root.querySelector("#text-blocks-container");
 
@@ -1014,6 +1062,7 @@ function renderApp(root) {
     !sendProgress ||
     !paperTypeInput ||
     !chunkMeta ||
+    !feedBtn ||
     !addTextBtn ||
     !textBlocksContainer
   ) {
@@ -1046,6 +1095,7 @@ function renderApp(root) {
     sendProgress,
     paperTypeInput,
     chunkMeta,
+    feedBtn,
     addTextBtn,
     textBlocksContainer,
     pasteTarget
@@ -1382,6 +1432,14 @@ function renderApp(root) {
   ui.sendBtn.addEventListener("click", async () => {
     try {
       await sendPreparedBitmap();
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
+  ui.feedBtn.addEventListener("click", async () => {
+    try {
+      await sendFeedRow();
     } catch (error) {
       console.error(error);
     }
