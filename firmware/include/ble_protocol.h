@@ -13,6 +13,7 @@ enum class PacketType : uint8_t {
   kAck = 0x05,
   kError = 0x06,
   kConfigure = 0x07,
+  kFeed = 0x08,
 };
 
 enum class ProtocolError : uint8_t {

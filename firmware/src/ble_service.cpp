@@ -210,6 +210,18 @@ void BleService::HandleWrite(const uint8_t* data, const size_t length) {
       return;
     }
 
+    case PacketType::kFeed: {
+      if (request.payloadLength != 1) {
+        NotifyError(request, ProtocolError::kPayloadLengthMismatch);
+        return;
+      }
+
+      const uint8_t rows = data[kPacketHeaderSize];
+      printerTransport_->FeedRows(rows);
+      NotifyAck(request);
+      return;
+    }
+
     case PacketType::kAck:
     case PacketType::kError:
       NotifyError(request, ProtocolError::kInvalidPacketType);

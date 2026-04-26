@@ -104,6 +104,11 @@ void PrinterTransport::Feed(const uint8_t lines) {
   printer_.timeoutWait();
 }
 
+void PrinterTransport::FeedRows(const uint8_t rows) {
+  printer_.feedRows(rows);
+  printer_.timeoutWait();
+}
+
 void PrinterTransport::PrintImage(
     const uint8_t* bitmap,
     const ImageEnvelope& envelope,

@@ -13,7 +13,8 @@ const PACKET_TYPE = {
   RESET: 0x04,
   ACK: 0x05,
   ERROR: 0x06,
-  CONFIGURE: 0x07
+  CONFIGURE: 0x07,
+  FEED: 0x08
 };
 const PACKET_TYPE_NAME = new Map([
   [PACKET_TYPE.TRANSFER_START, "transfer-start"],
@@ -22,7 +23,8 @@ const PACKET_TYPE_NAME = new Map([
   [PACKET_TYPE.RESET, "reset"],
   [PACKET_TYPE.ACK, "ack"],
   [PACKET_TYPE.ERROR, "error"],
-  [PACKET_TYPE.CONFIGURE, "configure"]
+  [PACKET_TYPE.CONFIGURE, "configure"],
+  [PACKET_TYPE.FEED, "feed"]
 ]);
 const PROTOCOL_ERROR_NAME = new Map([
   [0x00, "none"],
@@ -801,7 +803,7 @@ function createTransferId() {
   return (Date.now() & 0xffffffff) >>> 0;
 }
 
-async function sendFeedRow() {
+async function sendFeedRow(lines = 1) {
   if (!state.ble.connected) {
     setSendStatus("Connecting to printer...");
     try {
@@ -812,28 +814,15 @@ async function sendFeedRow() {
     }
   }
 
-  const width = MAX_WIDTH;
-  const envelope = buildEnvelope(width, 1);
-  const bitmap = new Uint8Array(envelope.strideBytes); // all zeros = all white
-  const transferId = createTransferId();
-
   state.ble.busy = true;
   updateTransportUI();
   setSendStatus("Feeding paper...");
 
   try {
-    await sendPacketAwaitAck(
-      PACKET_TYPE.TRANSFER_START,
-      transferId,
-      0,
-      encodeEnvelopePayload(envelope)
-    );
-
-    await sendPacketAwaitAck(PACKET_TYPE.DATA_CHUNK, transferId, 1, bitmap);
-    await sendPacketAwaitAck(PACKET_TYPE.TRANSFER_COMMIT, transferId, 2);
+    const payload = new Uint8Array([lines]);
+    await sendPacketAwaitAck(PACKET_TYPE.FEED, 0, 0, payload);
     setSendStatus("Feed complete.");
   } catch (error) {
-    await sendResetPacket(transferId, 0);
     const message = error instanceof Error ? error.message : String(error);
     setSendStatus(`Feed failed: ${message}`);
     throw error;

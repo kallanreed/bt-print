@@ -50,6 +50,7 @@ bool IsControlPacket(const PacketType type) {
          type == PacketType::kTransferCommit ||
          type == PacketType::kReset ||
          type == PacketType::kConfigure ||
+         type == PacketType::kFeed ||
          type == PacketType::kAck ||
          type == PacketType::kError;
 }
@@ -70,6 +71,8 @@ const char* PacketTypeName(const PacketType type) {
       return "error";
     case PacketType::kConfigure:
       return "configure";
+    case PacketType::kFeed:
+      return "feed";
   }
 
   return "unknown";

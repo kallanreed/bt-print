@@ -21,6 +21,7 @@ class PrinterTransport {
       bool preFeedBeforeImage = false);
   void PrintLine(const char* text);
   void Feed(uint8_t lines = 3);
+  void FeedRows(uint8_t rows);
 
  private:
   PrinterConfig currentConfig_{};
