@@ -52,9 +52,9 @@ const PAPER_PRESETS = {
   normal: {
     label: "Normal paper",
     heatDots: 7,
-    heatTime: 100,
+    heatTime: 115,
     heatInterval: 2,
-    density: 10,
+    density: 0,
     breakTime: 0,
     printSpeed: 0,
     feedSpeed: 0,
