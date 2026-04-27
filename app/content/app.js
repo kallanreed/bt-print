@@ -51,9 +51,9 @@ const PRINTER_CONFIG_SIZE = 10;
 const PAPER_PRESETS = {
   normal: {
     label: "Normal paper",
-    heatDots: 7,
-    heatTime: 115,
-    heatInterval: 2,
+    heatDots: 5,
+    heatTime: 120,
+    heatInterval: 6,
     density: 0,
     breakTime: 0,
     printSpeed: 0,
