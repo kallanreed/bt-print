@@ -1327,6 +1327,58 @@ function renderApp(root) {
     }
   };
 
+  // Parses an HTML string and returns the src of the first <img> found, or null.
+  const extractImageSrcFromHtml = (html) => {
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const img = doc.querySelector("img[src]");
+      return img?.src ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Returns the text/html DataTransferItem from a DataTransferItemList, or null.
+  const findHtmlItemInClipboardData = (clipboardData) => {
+    const items = [...(clipboardData?.items ?? [])];
+    return items.find(item => item.type === "text/html") ?? null;
+  };
+
+  // Fetches an image from a URL (handles data: URIs and CORS URLs) and returns
+  // a loaded HTMLImageElement.  Only http:, https:, and data: schemes are
+  // permitted.  Throws if the scheme is disallowed, the fetch fails, or the
+  // response is not an image.
+  const loadImageFromUrl = async (url) => {
+    const parsed = new URL(url, location.href);
+    if (!["http:", "https:", "data:"].includes(parsed.protocol)) {
+      throw new Error(`Unsupported URL scheme: ${parsed.protocol}`);
+    }
+    // data: URIs can be decoded directly via fetch without a network request.
+    const response = await fetch(url, parsed.protocol === "data:" ? undefined : { mode: "cors" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("Response is not an image.");
+    return loadImageFromFile(new File([blob], "pasted-image", { type: blob.type }));
+  };
+
+  // Extracts an image from a pasted HTML string (browser "Copy Image" path).
+  // Expected to be called after event.preventDefault() has already been issued.
+  const loadPastedImageFromHtml = async (html) => {
+    const src = extractImageSrcFromHtml(html);
+    if (!src) {
+      setImageStatus("No image found in clipboard.");
+      return;
+    }
+    setImageStatus("Loading pasted image…");
+    try {
+      const image = await loadImageFromUrl(src);
+      applyImageSource(image, "clipboard");
+    } catch (error) {
+      console.error(error);
+      setImageStatus("Unable to fetch the pasted image. Try saving it locally and using the file picker instead.");
+    }
+  };
+
   pasteBtn.addEventListener("click", async () => {
     setImageStatus("Reading clipboard…");
 
@@ -1335,9 +1387,17 @@ function renderApp(root) {
       const imageItem = items.find(item => item.types.some(type => type.startsWith("image/")));
 
       if (!imageItem) {
-        // clipboard.read() succeeded but returned no image type — the image may
-        // only be available through the paste event (e.g. native bitmap formats
-        // on Windows).  Fall back to the textarea paste-event path.
+        // clipboard.read() succeeded but returned no image type.  Browsers often
+        // put a text/html fragment (containing an <img> tag) instead of raw image
+        // bytes when the user copies an image from a web page.  Try that path first.
+        const htmlItem = items.find(item => item.types.includes("text/html"));
+        if (htmlItem) {
+          const htmlBlob = await htmlItem.getType("text/html");
+          await loadPastedImageFromHtml(await htmlBlob.text());
+          return;
+        }
+        // Nothing usable found — fall back to the textarea paste-event path so
+        // the OS paste gesture can deliver native bitmap formats (e.g. on Windows).
         pasteTarget.focus();
         setImageStatus("Paste an image using your device's paste gesture or Ctrl+V / Cmd+V.");
         return;
@@ -1360,9 +1420,17 @@ function renderApp(root) {
 
   document.addEventListener("paste", (event) => {
     const file = findImageInClipboard(event.clipboardData);
-    if (!file) return;
-    event.preventDefault();
-    loadPastedImage(file);
+    if (file) {
+      event.preventDefault();
+      loadPastedImage(file);
+      return;
+    }
+    // Browsers often copy images as text/html rather than image/* — check for that.
+    const htmlItem = findHtmlItemInClipboardData(event.clipboardData);
+    if (htmlItem) {
+      event.preventDefault();
+      htmlItem.getAsString((html) => loadPastedImageFromHtml(html));
+    }
   });
 
   // Also listen on the textarea so that paste events from a focused element
@@ -1371,8 +1439,15 @@ function renderApp(root) {
   pasteTarget.addEventListener("paste", (event) => {
     event.preventDefault();
     const file = findImageInClipboard(event.clipboardData);
-    if (!file) return;
-    loadPastedImage(file);
+    if (file) {
+      loadPastedImage(file);
+      return;
+    }
+    // Browsers often copy images as text/html rather than image/* — check for that.
+    const htmlItem = findHtmlItemInClipboardData(event.clipboardData);
+    if (htmlItem) {
+      htmlItem.getAsString((html) => loadPastedImageFromHtml(html));
+    }
   });
 
   // Safari requires the Promise to be passed directly to ClipboardItem rather
