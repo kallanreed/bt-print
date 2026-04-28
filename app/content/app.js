@@ -1304,25 +1304,20 @@ function renderApp(root) {
     }
   });
 
-  // Shared handler for paste events received via clipboardData (document or
-  // the pasteTarget textarea).  Returns true when an image was found so the
-  // caller can call preventDefault.
-  const handleImagePaste = async (clipboardData) => {
+  // Synchronously extracts an image File from clipboardData, or returns null.
+  // Must remain synchronous so callers can invoke event.preventDefault() before
+  // yielding to the microtask queue.
+  const findImageInClipboard = (clipboardData) => {
     const items = [...(clipboardData?.items ?? [])];
     const imageItem = items.find(item => item.type.startsWith("image/"));
+    if (!imageItem) return null;
+    return imageItem.getAsFile() || null;
+  };
 
-    if (!imageItem) {
-      return false;
-    }
-
-    const file = imageItem.getAsFile();
-
-    if (!file) {
-      return false;
-    }
-
+  // Async image loader called after the paste event has been synchronously
+  // handled (preventDefault already called by the time this runs).
+  const loadPastedImage = async (file) => {
     setImageStatus("Loading pasted image…");
-
     try {
       const image = await loadImageFromFile(file);
       applyImageSource(image, "clipboard");
@@ -1330,8 +1325,6 @@ function renderApp(root) {
       console.error(error);
       setImageStatus("Unable to load the pasted image.");
     }
-
-    return true;
   };
 
   pasteBtn.addEventListener("click", async () => {
@@ -1361,19 +1354,21 @@ function renderApp(root) {
     }
   });
 
-  document.addEventListener("paste", async (event) => {
-    const handled = await handleImagePaste(event.clipboardData);
-    if (handled) {
-      event.preventDefault();
-    }
+  document.addEventListener("paste", (event) => {
+    const file = findImageInClipboard(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    loadPastedImage(file);
   });
 
   // Also listen on the textarea so that paste events from a focused element
   // are captured in browsers (Bluefy, Edge) that do not reliably fire the
   // document-level paste event without an active focusable element.
-  pasteTarget.addEventListener("paste", async (event) => {
+  pasteTarget.addEventListener("paste", (event) => {
     event.preventDefault();
-    await handleImagePaste(event.clipboardData);
+    const file = findImageInClipboard(event.clipboardData);
+    if (!file) return;
+    loadPastedImage(file);
   });
 
   // Safari requires the Promise to be passed directly to ClipboardItem rather
