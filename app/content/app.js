@@ -1335,7 +1335,11 @@ function renderApp(root) {
       const imageItem = items.find(item => item.types.some(type => type.startsWith("image/")));
 
       if (!imageItem) {
-        setImageStatus("No image found in clipboard.");
+        // clipboard.read() succeeded but returned no image type — the image may
+        // only be available through the paste event (e.g. native bitmap formats
+        // on Windows).  Fall back to the textarea paste-event path.
+        pasteTarget.focus();
+        setImageStatus("Paste an image using your device's paste gesture or Ctrl+V / Cmd+V.");
         return;
       }
 
