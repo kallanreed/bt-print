@@ -1015,11 +1015,15 @@ function renderApp(root) {
   const addTextBtn = root.querySelector("#add-text-btn");
   const textBlocksContainer = root.querySelector("#text-blocks-container");
 
-  // Hidden off-screen textarea used as a reliable paste-event sink on mobile
-  // browsers (Bluefy, Edge) where document-level paste events only fire when
-  // a focusable element is active.
-  const pasteTarget = document.createElement("textarea");
+  // Hidden off-screen contenteditable div used as a reliable paste-event sink
+  // on mobile browsers (Bluefy, Edge, iOS Safari) where document-level paste
+  // events only fire when a focusable element is active.  A contenteditable
+  // element is required on iOS: pasting into a <textarea> causes iOS to omit
+  // image data from event.clipboardData, whereas a contenteditable div receives
+  // the full image clipboard item.
+  const pasteTarget = document.createElement("div");
   pasteTarget.id = "paste-target";
+  pasteTarget.setAttribute("contenteditable", "true");
   pasteTarget.setAttribute("aria-label", "Paste image here");
   pasteTarget.setAttribute("tabindex", "-1");
   document.body.appendChild(pasteTarget);
@@ -1433,9 +1437,10 @@ function renderApp(root) {
     }
   });
 
-  // Also listen on the textarea so that paste events from a focused element
-  // are captured in browsers (Bluefy, Edge) that do not reliably fire the
-  // document-level paste event without an active focusable element.
+  // Also listen on the contenteditable div so that paste events from a focused
+  // element are captured in browsers (Bluefy, Edge, iOS Safari) that do not
+  // reliably fire the document-level paste event without an active focusable
+  // element.
   pasteTarget.addEventListener("paste", (event) => {
     event.preventDefault();
     const file = findImageInClipboard(event.clipboardData);
